@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="nl" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MikeyBox - Inloggen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f0f0f;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { width: 100%; max-width: 380px; padding: 2rem; }
+        h1 {
+            font-size: 2.5rem;
+            letter-spacing: 4px;
+            color: #00d4ff;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle { text-align: center; color: #aaa; font-size: 0.9rem; margin-bottom: 2rem; }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 2rem;
+        }
+        .form-group { margin-bottom: 1.2rem; }
+        label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 0.4rem; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus, input[type="password"]:focus { border-color: #00d4ff; }
+        .btn {
+            width: 100%;
+            padding: 0.8rem;
+            background: #00d4ff;
+            color: #0f0f0f;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 0.5rem;
+        }
+        .btn:hover { background: #00aacc; }
+        .alert {
+            padding: 0.7rem 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .alert-error { background: #2a0f0f; border: 1px solid #ff4444; color: #ff8888; }
+        .alert-success { background: #0f2a1a; border: 1px solid #44ff88; color: #88ffbb; }
+        .footer-link { text-align: center; margin-top: 1.5rem; font-size: 0.9rem; color: #666; }
+        .footer-link a { color: #00d4ff; text-decoration: none; }
+        .footer-link a:hover { text-decoration: underline; }
+        footer { position: fixed; bottom: 1rem; color: #555; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MIKEYBOX</h1>
+        <p class="subtitle">mikeybox.zapto.org</p>
+        <div class="card">
+            <div th:if="${param.error}" class="alert alert-error">
+                Ongeldige gebruikersnaam of wachtwoord.
+            </div>
+            <div th:if="${param.logout}" class="alert alert-success">
+                Je bent uitgelogd.
+            </div>
+            <div th:if="${param.registered}" class="alert alert-success">
+                Account aangemaakt. Je kunt nu inloggen.
+            </div>
+            <form method="post" th:action="@{/login}">
+                <div class="form-group">
+                    <label for="username">Gebruikersnaam</label>
+                    <input type="text" id="username" name="username" autofocus required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Wachtwoord</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn">Inloggen</button>
+            </form>
+        </div>
+        <div class="footer-link">
+            Nog geen account? <a th:href="@{/register}">Registreren</a>
+        </div>
+    </div>
+    <footer>mikeybox.zapto.org</footer>
+</body>
+</html>
