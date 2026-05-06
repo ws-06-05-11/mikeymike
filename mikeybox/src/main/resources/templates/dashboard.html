@@ -43,6 +43,21 @@
             transition: background 0.2s, color 0.2s;
         }
         .logout-btn:hover { background: #ff5555; color: #0f0f0f; }
+        .nav-btn {
+            display: inline-block;
+            margin-top: 2rem;
+            margin-right: 1rem;
+            padding: 0.7rem 1.8rem;
+            background: transparent;
+            color: #00d4ff;
+            border: 1px solid #00d4ff;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-decoration: none;
+            transition: background 0.2s, color 0.2s;
+        }
+        .nav-btn:hover { background: #00d4ff; color: #0f0f0f; }
         footer { position: fixed; bottom: 1rem; color: #555; font-size: 0.8rem; }
     </style>
 </head>
@@ -53,6 +68,9 @@
             Welkom, <span class="username" sec:authentication="name">gebruiker</span>
         </p>
         <p style="color: #555; font-size: 0.9rem; margin-top: 0.3rem;">Je bent ingelogd</p>
+        <div>
+            <a th:href="@{/runs}" class="nav-btn">Hardlopen</a>
+        </div>
         <form method="post" th:action="@{/logout}">
             <button type="submit" class="logout-btn">Uitloggen</button>
         </form>
