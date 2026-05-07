@@ -1,0 +1,165 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Vraagt runbook-informatie op van een System Center Orchestrator server
+    via de ingebouwde Web Service API en exporteert het resultaat naar CSV.
+
+.PARAMETER OrchestratorServer
+    Hostname of IP van de Orchestrator server.
+
+.PARAMETER Port
+    Poort van de Orchestrator Web Service (standaard: 81).
+
+.PARAMETER Credential
+    Inloggegevens voor de Orchestrator Web Service.
+    Wordt gevraagd als niet opgegeven.
+
+.PARAMETER OutputPath
+    Map waar het CSV-bestand wordt opgeslagen (standaard: huidige map).
+
+.PARAMETER FolderFilter
+    Filter op een specifieke map in Orchestrator, bijv. "Productie\Servers".
+    Leeg = alle runbooks.
+
+.EXAMPLE
+    .\Get-OrchestratorRunbooks.ps1 -OrchestratorServer "orch01.bedrijf.local"
+
+.EXAMPLE
+    .\Get-OrchestratorRunbooks.ps1 -OrchestratorServer "orch01.bedrijf.local" `
+        -Credential (Get-Credential) `
+        -FolderFilter "Productie" `
+        -OutputPath "C:\Rapporten"
+
+.NOTES
+    Vereist: Orchestrator Web Service actief op de doelserver (standaard poort 81).
+    Controleer via: http://<server>:81/orchestrator2012/orchestrator.svc/
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$OrchestratorServer,
+
+    [ValidateRange(1, 65535)]
+    [int]$Port = 81,
+
+    [System.Management.Automation.PSCredential]
+    [System.Management.Automation.Credential()]
+    $Credential = (Get-Credential -Message "Voer Orchestrator inloggegevens in"),
+
+    [string]$OutputPath = (Get-Location).Path,
+
+    [string]$FolderFilter = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$baseUrl = "http://${OrchestratorServer}:${Port}/orchestrator2012/orchestrator.svc"
+
+function Write-Section ([string]$Text) {
+    Write-Host "`n$('─' * 60)" -ForegroundColor DarkGray
+    Write-Host "  $Text" -ForegroundColor Cyan
+    Write-Host "$('─' * 60)" -ForegroundColor DarkGray
+}
+
+function Invoke-OrchestratorApi {
+    param([string]$Endpoint)
+
+    $uri = "$baseUrl/$Endpoint"
+    Write-Verbose "Ophalen: $uri"
+
+    try {
+        $response = Invoke-RestMethod `
+            -Uri           $uri `
+            -Credential    $Credential `
+            -UseBasicParsing `
+            -Headers       @{ Accept = "application/json" } `
+            -ErrorAction   Stop
+
+        return $response.value ?? $response
+    }
+    catch {
+        Write-Error "API-aanroep mislukt voor '$uri': $_"
+    }
+}
+
+# ─── Verbinding testen ────────────────────────────────────────────────────────
+
+Write-Section "Verbinding maken met Orchestrator"
+Write-Host "  Server : $OrchestratorServer"
+Write-Host "  Poort  : $Port"
+Write-Host "  URL    : $baseUrl"
+
+try {
+    Invoke-RestMethod -Uri "$baseUrl/" -Credential $Credential -UseBasicParsing -ErrorAction Stop | Out-Null
+    Write-Host "  Status : Verbonden" -ForegroundColor Green
+}
+catch {
+    Write-Error "Kon geen verbinding maken met de Orchestrator Web Service:`n$_`n`nControleer of de service actief is op http://${OrchestratorServer}:${Port}/"
+    exit 1
+}
+
+# ─── Mappen ophalen ───────────────────────────────────────────────────────────
+
+Write-Section "Mappen ophalen"
+
+$folders = Invoke-OrchestratorApi -Endpoint "Folders"
+$folderMap = @{}
+foreach ($folder in $folders) {
+    $folderMap[$folder.Id] = $folder.Path ?? $folder.Name
+}
+Write-Host "  Gevonden: $($folders.Count) map(pen)"
+
+# ─── Runbooks ophalen ─────────────────────────────────────────────────────────
+
+Write-Section "Runbooks ophalen"
+
+$runbooks = Invoke-OrchestratorApi -Endpoint "Runbooks"
+Write-Host "  Gevonden: $($runbooks.Count) runbook(s)"
+
+# ─── Verwerken ────────────────────────────────────────────────────────────────
+
+$rapport = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+foreach ($rb in $runbooks) {
+    $pad = if ($folderMap.ContainsKey($rb.ParentId)) { $folderMap[$rb.ParentId] } else { "Onbekend" }
+
+    if ($FolderFilter -ne "" -and $pad -notlike "*$FolderFilter*") {
+        continue
+    }
+
+    $rapport.Add([PSCustomObject]@{
+        Naam              = $rb.Name
+        Pad               = $pad
+        ID                = $rb.Id
+        Aangemaakt        = if ($rb.CreatedOn)  { [datetime]$rb.CreatedOn  | Get-Date -Format "dd-MM-yyyy HH:mm" } else { "N/B" }
+        Gewijzigd         = if ($rb.ModifiedOn) { [datetime]$rb.ModifiedOn | Get-Date -Format "dd-MM-yyyy HH:mm" } else { "N/B" }
+        Uitgecheckt_Door  = if ($rb.CheckedOutBy -and $rb.CheckedOutBy -ne "") { $rb.CheckedOutBy } else { "-" }
+        Beschrijving      = if ($rb.Description -and $rb.Description -ne "") { $rb.Description } else { "-" }
+    })
+}
+
+# ─── Samenvatting ─────────────────────────────────────────────────────────────
+
+Write-Section "Samenvatting"
+Write-Host ("  Totaal runbooks  : {0}" -f $rapport.Count)
+if ($FolderFilter -ne "") {
+    Write-Host ("  Mapfilter        : {0}" -f $FolderFilter)
+}
+
+$rapport | Sort-Object Pad, Naam |
+    Format-Table Naam, Pad, Gewijzigd, Uitgecheckt_Door -AutoSize
+
+# ─── CSV export ───────────────────────────────────────────────────────────────
+
+if (-not (Test-Path $OutputPath)) {
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+}
+
+$csvFile = Join-Path $OutputPath "Orchestrator_Runbooks_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$rapport | Sort-Object Pad, Naam |
+    Export-Csv -Path $csvFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
+
+Write-Host "`n  CSV opgeslagen: $csvFile" -ForegroundColor Cyan
+Write-Host ""
