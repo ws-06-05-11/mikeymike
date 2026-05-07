@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standby & Verlof Rooster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg:             #060b18;
+    --surface:        #0e1628;
+    --surface-2:      #142035;
+    --border:         #1a2840;
+    --border-light:   #243350;
+    --text-1:         #e2e8f0;
+    --text-2:         #64748b;
+    --text-3:         #334155;
+    --accent:         #06b6d4;
+    --accent-dim:     rgba(6,182,212,.12);
+    --standby-dim:    rgba(59,130,246,.12);
+    --vacation-dim:   rgba(34,197,94,.10);
+    --conflict:       #ef4444;
+    --conflict-dim:   rgba(239,68,68,.12);
+    --current-bg:     rgba(6,182,212,.05);
+    --current-line:   rgba(6,182,212,.35);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text-1);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+}
+
+/* ── Header ── */
+.topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(6,11,24,.96);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+    height: 56px;
+    display: flex; align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+}
+.topbar-logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 17px; font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--text-1);
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+}
+.topbar-logo .accent { color: var(--accent); }
+.topbar-sep { flex: 1; }
+.year-nav {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+}
+.year-nav button {
+    background: none; border: none;
+    color: var(--text-2); cursor: pointer;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    font-size: 15px; line-height: 1;
+    transition: all .15s;
+    display: flex; align-items: center; justify-content: center;
+}
+.year-nav button:hover { color: var(--accent); background: var(--accent-dim); }
+.year-val {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 14px;
+    min-width: 44px; text-align: center;
+}
+.btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 6px 13px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.btn-primary {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--bg); font-weight: 500;
+}
+.btn-primary:hover { background: #22d3ee; border-color: #22d3ee; color: var(--bg); }
+
+/* ── Layout ── */
+.layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: calc(100vh - 56px);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 16px;
+    position: sticky;
+    top: 56px;
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 24px;
+}
+.s-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--text-2);
+    margin-bottom: 10px;
+}
+.member-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+    transition: all .15s;
+}
+.member-row:hover { background: var(--surface-2); border-color: var(--border); }
+.m-dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+}
+.m-input {
+    background: none; border: none;
+    color: var(--text-1);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    width: 100%; outline: none;
+}
+.m-input:focus { color: var(--accent); }
+.m-input::placeholder { color: var(--text-3); }
+
+.legend { display: flex; flex-direction: column; gap: 7px; }
+.leg-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-2); }
+.leg-badge {
+    width: 22px; height: 18px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; flex-shrink: 0;
+}
+
+.help { font-size: 11px; color: var(--text-2); line-height: 1.8; }
+
+/* ── Table ── */
+.main-wrap { overflow-x: auto; }
+.roster {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+}
+.roster thead {
+    position: sticky; top: 56px; z-index: 50;
+    background: var(--bg);
+}
+.roster th {
+    padding: 10px 12px;
+    text-align: left;
+    font-family: 'Syne', sans-serif;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.roster th.th-member { text-align: center; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.th-pip {
+    display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 4px; vertical-align: middle;
+}
+.roster td {
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    padding: 0;
+}
+.roster tr:hover td { background: var(--surface-2); }
+.roster tr.cur td { background: var(--current-bg); }
+.roster tr.cur td:first-child { border-left: 2px solid var(--accent); }
+
+/* Month row */
+.month-sep td {
+    padding: 5px 12px !important;
+    background: var(--surface) !important;
+    font-family: 'Syne', sans-serif;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border-light);
+}
+.month-sep:hover td { background: var(--surface) !important; }
+
+/* Week cell */
+.c-week { padding: 9px 12px; }
+.wnum {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; gap: 6px;
+}
+.now-pip {
+    background: var(--accent); color: var(--bg);
+    font-family: 'Syne', sans-serif;
+    font-size: 7px; font-weight: 800;
+    letter-spacing: .04em;
+    padding: 2px 5px; border-radius: 3px;
+}
+
+/* Period cell */
+.c-period { padding: 9px 12px; white-space: nowrap; }
+.p-dates { font-size: 11px; color: var(--text-2); }
+.p-time { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+
+/* Standby cell */
+.c-standby {
+    padding: 8px 12px; cursor: pointer;
+    transition: background .15s;
+}
+.c-standby:hover { background: var(--standby-dim); }
+.sb-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    border: 1px solid transparent;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.sb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.sb-conflict .sb-badge {
+    background: var(--conflict-dim) !important;
+    border-color: var(--conflict) !important;
+    color: var(--conflict) !important;
+}
+
+/* Vacation cell */
+.c-vac {
+    padding: 7px 6px; text-align: center;
+    cursor: pointer;
+    transition: background .15s;
+}
+.c-vac:hover { background: var(--vacation-dim); }
+.vac-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    font-size: 14px;
+    border: 1px solid transparent;
+    transition: all .15s;
+}
+.c-vac.vac-on .vac-icon {
+    background: var(--vacation-dim);
+    border-color: rgba(34,197,94,.4);
+}
+.c-vac.vac-conflict .vac-icon {
+    background: var(--conflict-dim);
+    border-color: rgba(239,68,68,.4);
+}
+
+/* FAB */
+.fab {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--accent); color: var(--bg);
+    border: none; border-radius: 10px;
+    padding: 10px 18px;
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(6,182,212,.3);
+    transition: all .2s;
+}
+.fab:hover {
+    background: #22d3ee;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(6,182,212,.4);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* Print */
+@media print {
+    .topbar .btn, .sidebar, .fab { display: none !important; }
+    .layout { grid-template-columns: 1fr; }
+    .roster thead { position: static; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="topbar-logo">
+        <span class="accent">◈</span> Standby <span class="accent">&amp;</span> Verlof
+    </div>
+    <div class="topbar-sep"></div>
+    <div class="year-nav">
+        <button onclick="shiftYear(-1)" title="Vorig jaar">‹</button>
+        <div class="year-val" id="yearVal"></div>
+        <button onclick="shiftYear(1)" title="Volgend jaar">›</button>
+    </div>
+    <button class="btn" onclick="resetOverrides()">Reset rotatie</button>
+    <button class="btn btn-primary" onclick="window.print()">Afdrukken</button>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <div>
+            <div class="s-label">Team leden</div>
+            <div id="membersList"></div>
+        </div>
+        <div>
+            <div class="s-label">Legenda</div>
+            <div class="legend">
+                <div class="leg-row">
+                    <div class="leg-badge" style="background:rgba(59,130,246,.12);border:1px solid #3b82f6;color:#3b82f6;font-size:10px;font-weight:600">S</div>
+                    Standby
+                </div>
+                <div class="leg-row">
+                    <div class="leg-badge" style="background:var(--vacation-dim);border:1px solid rgba(34,197,94,.4)">🌴</div>
+                    Verlof
+                </div>
+                <div class="leg-row">
+                    <div class="leg-badge" style="background:var(--conflict-dim);border:1px solid rgba(239,68,68,.4);color:var(--conflict);font-size:11px">⚠</div>
+                    Conflict
+                </div>
+                <div class="leg-row">
+                    <div class="leg-badge" style="background:var(--accent);color:var(--bg);font-family:Syne;font-size:7px;font-weight:800;letter-spacing:.04em">NU</div>
+                    Huidige week
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="s-label">Gebruik</div>
+            <div class="help">
+                Klik op een naam om<br>te bewerken<br><br>
+                Klik op 🌴 om verlof<br>in te stellen<br><br>
+                Klik op standby naam<br>om te wisselen<br><br>
+                ⚠ = standby persoon<br>heeft verlof
+            </div>
+        </div>
+    </aside>
+
+    <div class="main-wrap">
+        <table class="roster" id="roster">
+            <thead>
+                <tr id="rosterHead">
+                    <th style="width:68px">Week</th>
+                    <th style="width:200px">Periode</th>
+                    <th style="width:155px">Standby</th>
+                </tr>
+            </thead>
+            <tbody id="rosterBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<button class="fab" onclick="jumpToday()">↓ Vandaag</button>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+
+const COLORS = ['#3b82f6','#a78bfa','#f472b6','#fbbf24','#34d399','#fb923c'];
+const MONTHS = ['Januari','Februari','Maart','April','Mei','Juni',
+                'Juli','Augustus','September','Oktober','November','December'];
+const DAYS   = ['zo','ma','di','wo','do','vr','za'];
+
+// ── State ───────────────────────────────────────────────────────────────────
+
+let S = {
+    year:      new Date().getFullYear(),
+    members:   ['Naam 1','Naam 2','Naam 3','Naam 4','Naam 5','Naam 6'],
+    vacations: {},        // "mIdx_weekKey" → true
+    overrides: {},        // weekKey → mIdx
+    rotStart:  0          // member index that starts week 1 rotation
+};
+
+function save() { localStorage.setItem('rosterv2', JSON.stringify(S)); }
+function load() {
+    try {
+        const d = localStorage.getItem('rosterv2');
+        if (d) S = { ...S, ...JSON.parse(d) };
+    } catch(e) {}
+}
+
+// ── Date helpers ────────────────────────────────────────────────────────────
+
+function isoWeek(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const y1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return { week: Math.ceil((((d - y1) / 86400000) + 1) / 7), year: d.getUTCFullYear() };
+}
+
+function mondayOfWeek(week, year) {
+    const jan4  = new Date(year, 0, 4);
+    const dow   = jan4.getDay() || 7;
+    const w1mon = new Date(jan4);
+    w1mon.setDate(jan4.getDate() - dow + 1);
+    const mon = new Date(w1mon);
+    mon.setDate(w1mon.getDate() + (week - 1) * 7);
+    return mon;
+}
+
+function weeksInYear(year) {
+    const dec28 = new Date(year, 11, 28);
+    return isoWeek(dec28).week;
+}
+
+function fmt(d) {
+    return `${DAYS[d.getDay()]} ${String(d.getDate()).padStart(2,'0')} ${MONTHS[d.getMonth()].slice(0,3).toLowerCase()}`;
+}
+
+function buildWeeks(year) {
+    const n = weeksInYear(year);
+    return Array.from({ length: n }, (_, i) => {
+        const w   = i + 1;
+        const mon = mondayOfWeek(w, year);
+        const nxt = new Date(mon); nxt.setDate(mon.getDate() + 7);
+        return { w, year, mon, nxt, key: `${year}-W${String(w).padStart(2,'0')}` };
+    });
+}
+
+// ── Rotation ────────────────────────────────────────────────────────────────
+
+function activeMembers() {
+    return S.members.map((n,i) => ({ n: n || `Naam ${i+1}`, i })).filter(m => m.n.trim());
+}
+
+function standbyOf(key, idx) {
+    if (S.overrides[key] !== undefined) return S.overrides[key];
+    const am = activeMembers();
+    if (!am.length) return -1;
+    return am[(idx + S.rotStart) % am.length].i;
+}
+
+function cycleStandby(key, idx) {
+    const am = activeMembers();
+    if (!am.length) return;
+    const cur  = standbyOf(key, idx);
+    const pos  = am.findIndex(m => m.i === cur);
+    S.overrides[key] = am[(pos + 1) % am.length].i;
+    save(); render();
+}
+
+function onVac(mi, key) { return !!S.vacations[`${mi}_${key}`]; }
+
+function toggleVac(mi, key) {
+    const k = `${mi}_${key}`;
+    S.vacations[k] ? delete S.vacations[k] : (S.vacations[k] = true);
+    save(); render();
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+
+function renderSidebar() {
+    const el = document.getElementById('membersList');
+    el.innerHTML = '';
+    S.members.forEach((name, i) => {
+        const row = document.createElement('div');
+        row.className = 'member-row';
+        row.innerHTML = `
+            <div class="m-dot" style="background:${COLORS[i]}"></div>
+            <input class="m-input" type="text" value="${name}"
+                   placeholder="Naam ${i+1}" data-i="${i}">
+        `;
+        el.appendChild(row);
+    });
+    el.querySelectorAll('.m-input').forEach(inp => {
+        ['change','blur'].forEach(ev => inp.addEventListener(ev, e => {
+            S.members[+e.target.dataset.i] = e.target.value;
+            save(); renderHead(); render();
+        }));
+    });
+}
+
+function renderHead() {
+    document.getElementById('yearVal').textContent = S.year;
+    const head = document.getElementById('rosterHead');
+    while (head.children.length > 3) head.removeChild(head.lastChild);
+    S.members.forEach((n, i) => {
+        const th = document.createElement('th');
+        th.className = 'th-member';
+        th.style.width = '74px';
+        th.innerHTML = `<span class="th-pip" style="background:${COLORS[i]}"></span>${n || `Naam ${i+1}`}`;
+        head.appendChild(th);
+    });
+}
+
+function render() {
+    const tbody = document.getElementById('rosterBody');
+    tbody.innerHTML = '';
+    const weeks  = buildWeeks(S.year);
+    const today  = isoWeek(new Date());
+    let   lastMo = -1;
+
+    weeks.forEach((w, idx) => {
+        const isCur = w.w === today.week && w.year === today.year;
+        const si    = standbyOf(w.key, idx);
+        const sName = si >= 0 ? (S.members[si] || `Naam ${si+1}`) : '—';
+        const sCol  = si >= 0 ? COLORS[si] : '#64748b';
+        const sVac  = si >= 0 && onVac(si, w.key);
+
+        // Month separator
+        const mo = w.mon.getMonth();
+        if (mo !== lastMo) {
+            lastMo = mo;
+            const sep = document.createElement('tr');
+            sep.className = 'month-sep';
+            const td = document.createElement('td');
+            td.colSpan = 3 + S.members.length;
+            td.textContent = `${MONTHS[mo]} ${w.mon.getFullYear()}`;
+            sep.appendChild(td);
+            tbody.appendChild(sep);
+        }
+
+        const tr = document.createElement('tr');
+        if (isCur) { tr.className = 'cur'; tr.id = 'cur-row'; }
+
+        // Week number
+        tr.appendChild(cell(`
+            <div class="c-week">
+                <div class="wnum">
+                    W${String(w.w).padStart(2,'0')}
+                    ${isCur ? '<span class="now-pip">NU</span>' : ''}
+                </div>
+            </div>
+        `));
+
+        // Period
+        tr.appendChild(cell(`
+            <div class="c-period">
+                <div class="p-dates">${fmt(w.mon)} → ${fmt(w.nxt)}</div>
+                <div class="p-time">ma 17:00 → ma 07:00</div>
+            </div>
+        `));
+
+        // Standby
+        const tdSb = cell('');
+        tdSb.className = `c-standby${sVac ? ' sb-conflict' : ''}`;
+        tdSb.title = sVac
+            ? `⚠ Conflict: ${sName} heeft verlof — klik om te wisselen`
+            : `Klik om standby te wisselen`;
+        tdSb.innerHTML = `
+            <div class="sb-badge" style="${sVac ? '' : `background:${sCol}18;border-color:${sCol};color:${sCol}`}">
+                <div class="sb-dot" style="background:${sVac ? 'var(--conflict)' : sCol}"></div>
+                ${sName}${sVac ? ' <span style="font-size:11px">⚠</span>' : ''}
+            </div>
+        `;
+        tdSb.addEventListener('click', () => cycleStandby(w.key, idx));
+        tr.appendChild(tdSb);
+
+        // Member vacation cells
+        S.members.forEach((mName, mi) => {
+            const isVac   = onVac(mi, w.key);
+            const isSb    = mi === si;
+            const isConfl = isVac && isSb;
+            const tdV = cell('');
+            tdV.className = `c-vac${isVac ? (isConfl ? ' vac-conflict' : ' vac-on') : ''}`;
+            tdV.title = isVac
+                ? `${mName || `Naam ${mi+1}`}: verlof${isConfl ? ' ⚠ heeft standby!' : ''} — klik om te verwijderen`
+                : `${mName || `Naam ${mi+1}`}: klik om verlof in te stellen`;
+            tdV.innerHTML = `<div class="vac-icon">${isVac ? (isConfl ? '⚠️' : '🌴') : ''}</div>`;
+            tdV.addEventListener('click', () => toggleVac(mi, w.key));
+            tr.appendChild(tdV);
+        });
+
+        tbody.appendChild(tr);
+    });
+}
+
+function cell(html) {
+    const td = document.createElement('td');
+    td.innerHTML = html;
+    return td;
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function shiftYear(d) { S.year += d; save(); renderHead(); render(); }
+
+function resetOverrides() {
+    if (!confirm('Alle handmatige standby-wijzigingen resetten naar automatische rotatie?')) return;
+    S.overrides = {};
+    save(); render();
+}
+
+function jumpToday() {
+    const el = document.getElementById('cur-row');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+
+load();
+renderHead();
+renderSidebar();
+render();
+setTimeout(jumpToday, 350);
+</script>
+</body>
+</html>
