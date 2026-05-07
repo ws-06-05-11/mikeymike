@@ -1,0 +1,301 @@
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
+<#
+.SYNOPSIS
+    Registreert een wekelijkse Scheduled Task voor het WSUS rapport.
+
+.PARAMETER WsusServer
+    Hostname of IP van de WSUS server.
+
+.PARAMETER WsusPort
+    Poort van de WSUS server (standaard 8530).
+
+.PARAMETER UseSSL
+    Gebruik HTTPS voor de verbinding.
+
+.PARAMETER ScriptPath
+    Volledig pad naar Get-WsusUpdateReport.ps1.
+
+.PARAMETER OutputPath
+    Map waar rapporten worden opgeslagen.
+
+.PARAMETER DaysBeforeStale
+    Dagen zonder sync voordat een machine als verouderd geldt (standaard 30).
+
+.PARAMETER TargetGroup
+    Optionele WSUS computergroep als filter.
+
+.PARAMETER SmtpServer
+    SMTP server voor het verzenden van het rapport per e-mail.
+
+.PARAMETER SmtpPort
+    Poort van de SMTP server (standaard 587).
+
+.PARAMETER SmtpUseTLS
+    Gebruik STARTTLS voor de SMTP verbinding.
+
+.PARAMETER SmtpFrom
+    Afzenderadres.
+
+.PARAMETER SmtpTo
+    Kommagescheiden lijst van ontvangers.
+
+.PARAMETER SmtpCc
+    Kommagescheiden lijst van CC-ontvangers.
+
+.PARAMETER SmtpCredentialFile
+    Pad naar het versleutelde credential-bestand aangemaakt door
+    Save-WsusSmtpCredential.ps1. Moet als hetzelfde account zijn aangemaakt
+    dat de Scheduled Task uitvoert.
+
+.PARAMETER SendOnlyIfIssues
+    Stuur alleen een e-mail als er machines niet up to date zijn.
+
+.PARAMETER RunDay
+    Dag van de week waarop de taak draait (standaard: Monday).
+
+.PARAMETER RunTime
+    Tijdstip waarop de taak draait, notatie HH:mm (standaard: 06:00).
+
+.PARAMETER RunAsUser
+    Account waarmee de taak wordt uitgevoerd.
+    Gebruik "SYSTEM" voor het lokale systeemaccount (geen wachtwoord nodig).
+
+.PARAMETER RunAsPassword
+    Wachtwoord bij een domein- of lokaal gebruikersaccount.
+    Niet vereist bij SYSTEM.
+
+.PARAMETER TaskName
+    Naam van de Scheduled Task (standaard: WSUS_Weekly_Report).
+
+.PARAMETER Unregister
+    Verwijder de bestaande taak in plaats van aan te maken.
+
+.EXAMPLE
+    .\Register-WsusReportTask.ps1 -WsusServer "wsus01.bedrijf.local" -OutputPath "C:\Rapporten"
+
+.EXAMPLE
+    # Stap 1 — credentials opslaan als het service-account (eenmalig, interactief):
+    runas /user:BEDRIJF\svc-wsusreport "powershell -File C:\Scripts\Save-WsusSmtpCredential.ps1 -SmtpUser wsus@bedrijf.nl -OutputFile C:\Scripts\wsus_smtp.cred"
+
+    # Stap 2 — Scheduled Task aanmaken:
+    .\Register-WsusReportTask.ps1 -WsusServer "wsus01.bedrijf.local" `
+        -ScriptPath "C:\Scripts\Get-WsusUpdateReport.ps1" `
+        -OutputPath "C:\Rapporten\WSUS" `
+        -RunAsUser "BEDRIJF\svc-wsusreport" -RunAsPassword "P@ssw0rd" `
+        -SmtpServer "smtp.office365.com" -SmtpPort 587 -SmtpUseTLS `
+        -SmtpFrom "wsus@bedrijf.nl" -SmtpTo "beheer@bedrijf.nl" `
+        -SmtpCredentialFile "C:\Scripts\wsus_smtp.cred" `
+        -SendOnlyIfIssues
+
+.EXAMPLE
+    .\Register-WsusReportTask.ps1 -Unregister
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory = $true, ParameterSetName = "Register")]
+    [string]$WsusServer,
+
+    [ValidateRange(1, 65535)]
+    [int]$WsusPort = 8530,
+
+    [switch]$UseSSL,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "Register")]
+    [ValidateScript({ Test-Path $_ -PathType Leaf })]
+    [string]$ScriptPath = (Join-Path (Split-Path $MyInvocation.MyCommand.Path) "Get-WsusUpdateReport.ps1"),
+
+    [Parameter(Mandatory = $true, ParameterSetName = "Register")]
+    [string]$OutputPath,
+
+    [ValidateRange(1, 365)]
+    [int]$DaysBeforeStale = 30,
+
+    [string]$TargetGroup = "",
+
+    # ── E-mail ────────────────────────────────────────────────────────────────
+    [string]$SmtpServer = "",
+
+    [ValidateRange(1, 65535)]
+    [int]$SmtpPort = 587,
+
+    [switch]$SmtpUseTLS,
+
+    [string]$SmtpFrom = "",
+
+    [string]$SmtpTo = "",
+
+    [string]$SmtpCc = "",
+
+    [ValidateScript({
+        if ($_ -eq "") { return $true }
+        if (-not (Test-Path $_ -PathType Leaf)) {
+            throw "SmtpCredentialFile '$_' niet gevonden."
+        }
+        return $true
+    })]
+    [string]$SmtpCredentialFile = "",
+
+    [switch]$SendOnlyIfIssues,
+
+    # ── Taakplanning ──────────────────────────────────────────────────────────
+    [ValidateSet("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")]
+    [string]$RunDay = "Monday",
+
+    [ValidatePattern("^\d{2}:\d{2}$")]
+    [string]$RunTime = "06:00",
+
+    [string]$RunAsUser = "SYSTEM",
+
+    [string]$RunAsPassword = "",
+
+    [string]$TaskName = "WSUS_Weekly_Report",
+
+    [Parameter(ParameterSetName = "Unregister")]
+    [switch]$Unregister
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$TaskFolder = "\IT-Beheer\"
+
+function Write-Step ([string]$Text) {
+    Write-Host "`n  >> $Text" -ForegroundColor Cyan
+}
+
+# ─── Verwijderen ──────────────────────────────────────────────────────────────
+
+if ($Unregister) {
+    Write-Step "Taak '$TaskName' verwijderen..."
+    try {
+        Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskFolder -Confirm:$false
+        Write-Host "  Taak verwijderd." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Taak niet gevonden of kon niet worden verwijderd: $_"
+    }
+    exit 0
+}
+
+# ─── Validaties ───────────────────────────────────────────────────────────────
+
+if (-not (Test-Path $OutputPath)) {
+    Write-Step "Outputmap aanmaken: $OutputPath"
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+}
+
+# ─── Argumentenlijst opbouwen ─────────────────────────────────────────────────
+
+$scriptArgs = "-NonInteractive -ExecutionPolicy Bypass -File `"$ScriptPath`"" +
+              " -WsusServer `"$WsusServer`"" +
+              " -WsusPort $WsusPort" +
+              " -OutputPath `"$OutputPath`"" +
+              " -DaysBeforeStale $DaysBeforeStale"
+
+if ($UseSSL)               { $scriptArgs += " -UseSSL" }
+if ($TargetGroup -ne "")   { $scriptArgs += " -TargetGroup `"$TargetGroup`"" }
+
+if ($SmtpServer -ne "") {
+    $scriptArgs += " -SmtpServer `"$SmtpServer`" -SmtpPort $SmtpPort"
+    $scriptArgs += " -SmtpFrom `"$SmtpFrom`""
+    if ($SmtpUseTLS)              { $scriptArgs += " -SmtpUseTLS" }
+    if ($SmtpTo -ne "")          { $scriptArgs += " -SmtpTo $($SmtpTo -split ',' | ForEach-Object { "`"$($_.Trim())`"" } | Join-String -Separator ',')" }
+    if ($SmtpCc -ne "")          { $scriptArgs += " -SmtpCc $($SmtpCc -split ',' | ForEach-Object { "`"$($_.Trim())`"" } | Join-String -Separator ',')" }
+    if ($SmtpCredentialFile -ne "") { $scriptArgs += " -SmtpCredentialFile `"$SmtpCredentialFile`"" }
+    if ($SendOnlyIfIssues)       { $scriptArgs += " -SendOnlyIfIssues" }
+}
+
+# ─── Taakonderdelen definiëren ────────────────────────────────────────────────
+
+Write-Step "Scheduled Task configureren..."
+
+$action = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument $scriptArgs `
+    -WorkingDirectory $OutputPath
+
+$trigger = New-ScheduledTaskTrigger `
+    -Weekly `
+    -DaysOfWeek $RunDay `
+    -At $RunTime
+
+$settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
+    -MultipleInstances IgnoreNew `
+    -StartWhenAvailable `
+    -RunOnlyIfNetworkAvailable `
+    -WakeToRun:$false
+
+# Principal (uitvoerend account)
+if ($RunAsUser -eq "SYSTEM") {
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId "NT AUTHORITY\SYSTEM" `
+        -LogonType ServiceAccount `
+        -RunLevel Highest
+}
+else {
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $RunAsUser `
+        -LogonType Password `
+        -RunLevel Highest
+}
+
+$task = New-ScheduledTask `
+    -Action   $action `
+    -Trigger  $trigger `
+    -Settings $settings `
+    -Principal $principal `
+    -Description "Wekelijks WSUS update rapport voor alle geregistreerde machines. Aangemaakt door Register-WsusReportTask.ps1 op $(Get-Date -Format 'dd-MM-yyyy')."
+
+# ─── Taak registreren ─────────────────────────────────────────────────────────
+
+Write-Step "Taakmap '$TaskFolder' aanmaken indien nodig..."
+$scheduler = New-Object -ComObject "Schedule.Service"
+$scheduler.Connect()
+$rootFolder = $scheduler.GetFolder("\")
+try {
+    $rootFolder.GetFolder($TaskFolder.Trim("\")) | Out-Null
+}
+catch {
+    $rootFolder.CreateFolder($TaskFolder.Trim("\")) | Out-Null
+}
+
+Write-Step "Taak '$TaskName' registreren..."
+
+$regParams = @{
+    TaskName  = $TaskName
+    TaskPath  = $TaskFolder
+    InputObject = $task
+    Force     = $true
+}
+
+if ($RunAsUser -ne "SYSTEM" -and $RunAsPassword -ne "") {
+    $regParams["User"]     = $RunAsUser
+    $regParams["Password"] = $RunAsPassword
+}
+
+Register-ScheduledTask @regParams | Out-Null
+
+# ─── Verificatie ──────────────────────────────────────────────────────────────
+
+$registered = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskFolder -ErrorAction SilentlyContinue
+
+if ($registered) {
+    Write-Host "`n  Taak succesvol geregistreerd!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Naam        : $($registered.TaskName)"
+    Write-Host "  Map         : $($registered.TaskPath)"
+    Write-Host "  Status      : $($registered.State)"
+    Write-Host "  Draait op   : $RunDay om $RunTime"
+    Write-Host "  Account     : $RunAsUser"
+    Write-Host "  Script      : $ScriptPath"
+    Write-Host "  Rapporten   : $OutputPath"
+    Write-Host ""
+    Write-Host "  Handmatig starten ter test:" -ForegroundColor Yellow
+    Write-Host "  Start-ScheduledTask -TaskName '$TaskName' -TaskPath '$TaskFolder'"
+}
+else {
+    Write-Error "Registratie mislukt — taak niet teruggevonden na aanmaken."
+}

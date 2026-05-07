@@ -1,0 +1,507 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Genereert een WSUS updatestatus rapport voor alle geregistreerde machines.
+
+.DESCRIPTION
+    Maakt verbinding met een WSUS server en exporteert per machine of deze
+    up to date is. Output naar console, CSV en HTML.
+
+.PARAMETER WsusServer
+    Hostname of IP van de WSUS server.
+
+.PARAMETER WsusPort
+    Poort van de WSUS server (standaard 8530, met SSL 8531).
+
+.PARAMETER UseSSL
+    Gebruik HTTPS voor de verbinding.
+
+.PARAMETER OutputPath
+    Map waar de rapporten worden opgeslagen (standaard: huidige map).
+
+.PARAMETER DaysBeforeStale
+    Aantal dagen zonder synchronisatie voordat een machine als 'verouderd'
+    wordt beschouwd (standaard: 30).
+
+.PARAMETER TargetGroup
+    Filter op een specifieke WSUS computergroep. Leeg = alle groepen.
+
+.PARAMETER SmtpServer
+    Hostname of IP van de SMTP server. Weglaten = geen e-mail verzenden.
+
+.PARAMETER SmtpPort
+    Poort van de SMTP server (standaard 587).
+
+.PARAMETER SmtpUseTLS
+    Gebruik STARTTLS voor de SMTP verbinding.
+
+.PARAMETER SmtpFrom
+    Afzenderadres, bijv. "wsus-rapport@bedrijf.nl".
+
+.PARAMETER SmtpTo
+    Eén of meerdere ontvangers, bijv. "beheer@bedrijf.nl","manager@bedrijf.nl".
+
+.PARAMETER SmtpCc
+    Optionele CC-ontvangers.
+
+.PARAMETER SmtpCredentialFile
+    Pad naar het versleutelde credential-bestand aangemaakt door
+    Save-WsusSmtpCredential.ps1. Weglaten voor anonieme SMTP relay.
+    Het bestand is DPAPI-versleuteld en werkt alleen op dezelfde machine
+    en onder hetzelfde Windows-account.
+
+.PARAMETER EmailSubject
+    Onderwerp van de e-mail. Standaard wordt automatisch gegenereerd.
+
+.PARAMETER SendOnlyIfIssues
+    Stuur alleen een e-mail als er machines zijn die niet up to date zijn.
+
+.EXAMPLE
+    .\Get-WsusUpdateReport.ps1 -WsusServer "wsus01.bedrijf.local"
+
+.EXAMPLE
+    .\Get-WsusUpdateReport.ps1 -WsusServer "wsus01.bedrijf.local" -WsusPort 8531 -UseSSL -TargetGroup "Servers"
+
+.EXAMPLE
+    .\Get-WsusUpdateReport.ps1 -WsusServer "wsus01.bedrijf.local" `
+        -SmtpServer "mail.bedrijf.local" -SmtpFrom "wsus@bedrijf.nl" `
+        -SmtpTo "beheer@bedrijf.nl","manager@bedrijf.nl" -SmtpUseTLS
+
+.EXAMPLE
+    # Stap 1 — credentials éénmalig opslaan (als het account van de Scheduled Task):
+    .\Save-WsusSmtpCredential.ps1 -SmtpUser "wsus@bedrijf.nl" -OutputFile "C:\Scripts\wsus_smtp.cred"
+
+    # Stap 2 — rapport draaien met het credential-bestand:
+    .\Get-WsusUpdateReport.ps1 -WsusServer "wsus01.bedrijf.local" `
+        -SmtpServer "smtp.office365.com" -SmtpPort 587 -SmtpUseTLS `
+        -SmtpFrom "wsus@bedrijf.nl" -SmtpTo "beheer@bedrijf.nl" `
+        -SmtpCredentialFile "C:\Scripts\wsus_smtp.cred" `
+        -SendOnlyIfIssues
+
+.NOTES
+    Vereist: WSUS Administration Tools (RSAT) op de machine waarop het script draait.
+    Installeer via: Install-WindowsFeature -Name UpdateServices-UI  (op server)
+    Of via: Add-WindowsCapability -Online -Name Rsat.WSUS.Tools~~~~0.0.1.0  (op Windows 10/11)
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$WsusServer,
+
+    [ValidateRange(1, 65535)]
+    [int]$WsusPort = 8530,
+
+    [switch]$UseSSL,
+
+    [string]$OutputPath = (Get-Location).Path,
+
+    [ValidateRange(1, 365)]
+    [int]$DaysBeforeStale = 30,
+
+    [string]$TargetGroup = "",
+
+    # ── E-mail (alle optioneel — weglaten = geen e-mail) ──────────────────────
+    [string]$SmtpServer = "",
+
+    [ValidateRange(1, 65535)]
+    [int]$SmtpPort = 587,
+
+    [switch]$SmtpUseTLS,
+
+    [string]$SmtpFrom = "",
+
+    [string[]]$SmtpTo = @(),
+
+    [string[]]$SmtpCc = @(),
+
+    [ValidateScript({
+        if ($_ -eq "") { return $true }
+        if (-not (Test-Path $_ -PathType Leaf)) {
+            throw "SmtpCredentialFile '$_' niet gevonden."
+        }
+        return $true
+    })]
+    [string]$SmtpCredentialFile = "",
+
+    [string]$EmailSubject = "",
+
+    [switch]$SendOnlyIfIssues
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# ─── Hulpfuncties ────────────────────────────────────────────────────────────
+
+function Write-Section ([string]$Text) {
+    Write-Host "`n$('─' * 60)" -ForegroundColor DarkGray
+    Write-Host "  $Text" -ForegroundColor Cyan
+    Write-Host "$('─' * 60)" -ForegroundColor DarkGray
+}
+
+function Assert-WsusModule {
+    try {
+        [void][reflection.assembly]::LoadWithPartialName("Microsoft.UpdateServices.Administration")
+        if (-not ("Microsoft.UpdateServices.Administration.AdminProxy" -as [type])) {
+            throw "Type niet gevonden na laden assembly."
+        }
+    }
+    catch {
+        Write-Error @"
+Kon de WSUS assembly niet laden. Installeer WSUS Administration Tools:
+
+  Server  : Install-WindowsFeature -Name UpdateServices-UI
+  Win10/11: Add-WindowsCapability -Online -Name Rsat.WSUS.Tools~~~~0.0.1.0
+
+Fout: $_
+"@
+        exit 1
+    }
+}
+
+function Send-WsusMailReport {
+    param(
+        [string]$HtmlBody,
+        [string]$CsvAttachment,
+        [string]$HtmlAttachment,
+        [int]$TotalMachines,
+        [int]$NotUpToDate
+    )
+
+    if ($SmtpServer -eq "" -or $SmtpFrom -eq "" -or $SmtpTo.Count -eq 0) {
+        Write-Verbose "E-mail overgeslagen: SmtpServer, SmtpFrom of SmtpTo niet opgegeven."
+        return
+    }
+
+    if ($SendOnlyIfIssues -and $NotUpToDate -eq 0) {
+        Write-Host "  Geen problemen gevonden — e-mail niet verzonden (SendOnlyIfIssues)." -ForegroundColor DarkGray
+        return
+    }
+
+    $subject = if ($EmailSubject -ne "") {
+        $EmailSubject
+    } else {
+        $statusTag = if ($NotUpToDate -gt 0) { "[$NotUpToDate machine(s) vereisen aandacht]" } else { "[Alles up to date]" }
+        "WSUS Update Rapport $statusTag — $(Get-Date -Format 'dd-MM-yyyy')"
+    }
+
+    try {
+        $mail = [System.Net.Mail.MailMessage]::new()
+        $mail.From       = $SmtpFrom
+        $mail.Subject    = $subject
+        $mail.Body       = $HtmlBody
+        $mail.IsBodyHtml = $true
+
+        foreach ($to in $SmtpTo) { $mail.To.Add($to) }
+        foreach ($cc in $SmtpCc) { $mail.CC.Add($cc) }
+
+        # CSV bijlage
+        $csvStream = [System.IO.File]::OpenRead($CsvAttachment)
+        $csvName   = [System.IO.Path]::GetFileName($CsvAttachment)
+        $mail.Attachments.Add(
+            [System.Net.Mail.Attachment]::new($csvStream, $csvName, "text/csv")
+        )
+
+        # HTML bijlage
+        $htmlStream = [System.IO.File]::OpenRead($HtmlAttachment)
+        $htmlName   = [System.IO.Path]::GetFileName($HtmlAttachment)
+        $mail.Attachments.Add(
+            [System.Net.Mail.Attachment]::new($htmlStream, $htmlName, "text/html")
+        )
+
+        $smtp = [System.Net.Mail.SmtpClient]::new($SmtpServer, $SmtpPort)
+        $smtp.EnableSsl = $SmtpUseTLS.IsPresent
+
+        if ($SmtpCredentialFile -ne "") {
+            try {
+                $cred = Import-Clixml -Path $SmtpCredentialFile
+                $smtp.Credentials = $cred.GetNetworkCredential()
+            }
+            catch {
+                throw "Kon credential-bestand niet lezen: $_`nZorg dat het bestand is aangemaakt door hetzelfde Windows-account dat dit script uitvoert."
+            }
+        } else {
+            $smtp.UseDefaultCredentials = $true
+        }
+
+        $smtp.Send($mail)
+        Write-Host "  E-mail verzonden naar: $($SmtpTo -join ', ')" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "E-mail verzenden mislukt: $_"
+    }
+    finally {
+        if ($mail)       { $mail.Dispose() }
+        if ($smtp)       { $smtp.Dispose() }
+        if ($csvStream)  { $csvStream.Dispose() }
+        if ($htmlStream) { $htmlStream.Dispose() }
+    }
+}
+
+function Get-UpdateStatus {
+    param(
+        [int]$Needed,
+        [int]$Failed,
+        [int]$PendingReboot,
+        [int]$DaysSinceSync,
+        [int]$StaleThreshold
+    )
+
+    if ($DaysSinceSync -gt $StaleThreshold) {
+        return [PSCustomObject]@{ Label = "Niet gesynchroniseerd"; UpToDate = $false; Priority = 3 }
+    }
+    if ($Failed -gt 0) {
+        return [PSCustomObject]@{ Label = "Installatie mislukt"; UpToDate = $false; Priority = 3 }
+    }
+    if ($Needed -gt 0) {
+        return [PSCustomObject]@{ Label = "Updates beschikbaar"; UpToDate = $false; Priority = 2 }
+    }
+    if ($PendingReboot -gt 0) {
+        return [PSCustomObject]@{ Label = "Herstart vereist"; UpToDate = $false; Priority = 1 }
+    }
+    return [PSCustomObject]@{ Label = "Up to date"; UpToDate = $true; Priority = 0 }
+}
+
+# ─── Verbinding maken ─────────────────────────────────────────────────────────
+
+Write-Section "Verbinding maken met WSUS"
+
+Assert-WsusModule
+
+Write-Host "  Server : $WsusServer"
+Write-Host "  Poort  : $WsusPort"
+Write-Host "  SSL    : $($UseSSL.IsPresent)"
+
+try {
+    $wsus = [Microsoft.UpdateServices.Administration.AdminProxy]::GetUpdateServer(
+        $WsusServer, $UseSSL.IsPresent, $WsusPort
+    )
+    Write-Host "  Status : Verbonden" -ForegroundColor Green
+}
+catch {
+    Write-Error "Verbinding mislukt: $_"
+    exit 1
+}
+
+# ─── Computers ophalen ────────────────────────────────────────────────────────
+
+Write-Section "Computers ophalen"
+
+$computerScope = New-Object Microsoft.UpdateServices.Administration.ComputerTargetScope
+
+if ($TargetGroup -ne "") {
+    try {
+        $group = $wsus.GetComputerTargetGroups() | Where-Object { $_.Name -eq $TargetGroup }
+        if (-not $group) {
+            Write-Warning "Groep '$TargetGroup' niet gevonden. Alle groepen worden gebruikt."
+        }
+        else {
+            $computerScope.ComputerTargetGroups.Add($group)
+            Write-Host "  Filter : Groep '$TargetGroup'"
+        }
+    }
+    catch {
+        Write-Warning "Kon groepfilter niet toepassen: $_"
+    }
+}
+
+$computers = $wsus.GetComputerTargets($computerScope)
+Write-Host "  Gevonden: $($computers.Count) machine(s)"
+
+if ($computers.Count -eq 0) {
+    Write-Warning "Geen computers gevonden. Controleer de WSUS-configuratie."
+    exit 0
+}
+
+# ─── Updates verwerken ────────────────────────────────────────────────────────
+
+Write-Section "Updatestatus verwerken"
+
+$updateScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
+$updateScope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::HasStatedValue
+
+$report  = [System.Collections.Generic.List[PSCustomObject]]::new()
+$counter = 0
+$total   = $computers.Count
+
+foreach ($computer in $computers) {
+    $counter++
+    $pct = [math]::Round(($counter / $total) * 100)
+    Write-Progress -Activity "Updatestatus ophalen" `
+        -Status "$($computer.FullDomainName) ($counter/$total)" `
+        -PercentComplete $pct
+
+    $needed       = 0
+    $installed    = 0
+    $failed       = 0
+    $pendingReboot = 0
+
+    try {
+        $installInfo = $computer.GetUpdateInstallationInfoPerUpdate($updateScope)
+
+        foreach ($info in $installInfo) {
+            switch ($info.UpdateInstallationState) {
+                "Needed"                { $needed++ }
+                "Downloaded"            { $needed++ }
+                "InstalledPendingReboot" { $pendingReboot++ }
+                "Installed"             { $installed++ }
+                "Failed"                { $failed++ }
+            }
+        }
+    }
+    catch {
+        Write-Verbose "Kon updates niet ophalen voor $($computer.FullDomainName): $_"
+    }
+
+    $lastSync = $computer.LastSyncTime
+    $daysSinceSync = if ($lastSync -and $lastSync -gt [datetime]::MinValue) {
+        [math]::Round(((Get-Date) - $lastSync).TotalDays)
+    }
+    else { 9999 }
+
+    $status = Get-UpdateStatus -Needed $needed -Failed $failed `
+        -PendingReboot $pendingReboot -DaysSinceSync $daysSinceSync `
+        -StaleThreshold $DaysBeforeStale
+
+    $report.Add([PSCustomObject]@{
+        Computernaam       = $computer.FullDomainName
+        IP_Adres           = $computer.IPAddress
+        Besturingssysteem  = $computer.OSDescription
+        Laatste_Sync       = if ($lastSync -and $lastSync -gt [datetime]::MinValue) {
+                                 $lastSync.ToString("dd-MM-yyyy HH:mm")
+                             } else { "Nooit" }
+        Dagen_Zonder_Sync  = if ($daysSinceSync -eq 9999) { "N/B" } else { $daysSinceSync }
+        Up_To_Date         = if ($status.UpToDate) { "Ja" } else { "Nee" }
+        Status             = $status.Label
+        Updates_Nodig      = $needed
+        Geinstalleerd      = $installed
+        Mislukt            = $failed
+        Herstart_Vereist   = $pendingReboot
+    })
+}
+
+Write-Progress -Activity "Updatestatus ophalen" -Completed
+
+# ─── Samenvatting in console ─────────────────────────────────────────────────
+
+Write-Section "Samenvatting"
+
+$upToDate    = ($report | Where-Object { $_.Up_To_Date -eq "Ja" }).Count
+$notUpToDate = $total - $upToDate
+
+Write-Host ("  Totaal machines    : {0}" -f $total)
+Write-Host ("  Up to date         : {0}" -f $upToDate)   -ForegroundColor Green
+Write-Host ("  Niet up to date    : {0}" -f $notUpToDate) -ForegroundColor Red
+
+Write-Host ""
+$report | Sort-Object Up_To_Date, Computernaam |
+    Format-Table Computernaam, IP_Adres, Up_To_Date, Status,
+                 Updates_Nodig, Mislukt, Herstart_Vereist, Laatste_Sync -AutoSize
+
+# ─── CSV export ───────────────────────────────────────────────────────────────
+
+$timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
+$csvFile    = Join-Path $OutputPath "WSUS_Rapport_$timestamp.csv"
+$htmlFile   = Join-Path $OutputPath "WSUS_Rapport_$timestamp.html"
+
+$report | Export-Csv -Path $csvFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
+Write-Host "`n  CSV  : $csvFile" -ForegroundColor Cyan
+
+# ─── HTML export ──────────────────────────────────────────────────────────────
+
+$css = @"
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background: #f5f5f5; }
+  h1   { color: #0078d4; margin-bottom: 4px; }
+  .meta{ color: #666; font-size: 0.9em; margin-bottom: 20px; }
+  .summary { display: flex; gap: 20px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 8px; padding: 16px 24px;
+          box-shadow: 0 2px 6px rgba(0,0,0,.08); text-align: center; }
+  .card .num  { font-size: 2em; font-weight: 700; }
+  .card .lbl  { font-size: 0.85em; color: #666; }
+  .green { color: #107c10; }
+  .red   { color: #d13438; }
+  .orange{ color: #f7630c; }
+  table { border-collapse: collapse; width: 100%; background: white;
+          border-radius: 8px; overflow: hidden;
+          box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+  th  { background: #0078d4; color: white; padding: 10px 12px;
+        text-align: left; font-weight: 600; }
+  td  { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f0f6ff; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px;
+           font-size: 0.8em; font-weight: 600; }
+  .badge-ok  { background: #dff6dd; color: #107c10; }
+  .badge-err { background: #fde7e9; color: #d13438; }
+</style>
+"@
+
+$rows = ($report | Sort-Object Up_To_Date, Computernaam | ForEach-Object {
+    $badge = if ($_.Up_To_Date -eq "Ja") {
+        '<span class="badge badge-ok">Ja</span>'
+    } else {
+        '<span class="badge badge-err">Nee</span>'
+    }
+    "<tr>
+      <td>$($_.Computernaam)</td>
+      <td>$($_.IP_Adres)</td>
+      <td>$($_.Besturingssysteem)</td>
+      <td>$badge</td>
+      <td>$($_.Status)</td>
+      <td style='text-align:center'>$($_.Updates_Nodig)</td>
+      <td style='text-align:center'>$($_.Mislukt)</td>
+      <td style='text-align:center'>$($_.Herstart_Vereist)</td>
+      <td>$($_.Laatste_Sync)</td>
+    </tr>"
+}) -join "`n"
+
+$html = @"
+<!DOCTYPE html>
+<html lang="nl">
+<head><meta charset="UTF-8"><title>WSUS Rapport</title>$css</head>
+<body>
+  <h1>WSUS Update Rapport</h1>
+  <p class="meta">Server: <strong>$WsusServer</strong> &nbsp;|&nbsp;
+     Gegenereerd: <strong>$(Get-Date -Format 'dd-MM-yyyy HH:mm')</strong></p>
+
+  <div class="summary">
+    <div class="card"><div class="num">$total</div><div class="lbl">Totaal machines</div></div>
+    <div class="card"><div class="num green">$upToDate</div><div class="lbl">Up to date</div></div>
+    <div class="card"><div class="num red">$notUpToDate</div><div class="lbl">Niet up to date</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Computernaam</th><th>IP Adres</th><th>Besturingssysteem</th>
+        <th>Up To Date</th><th>Status</th>
+        <th>Updates nodig</th><th>Mislukt</th><th>Herstart vereist</th>
+        <th>Laatste sync</th>
+      </tr>
+    </thead>
+    <tbody>
+$rows
+    </tbody>
+  </table>
+</body>
+</html>
+"@
+
+$html | Out-File -FilePath $htmlFile -Encoding UTF8
+Write-Host "  HTML : $htmlFile" -ForegroundColor Cyan
+
+# ─── E-mail verzenden ─────────────────────────────────────────────────────────
+
+if ($SmtpServer -ne "") {
+    Write-Section "E-mail verzenden"
+    Send-WsusMailReport `
+        -HtmlBody       $html `
+        -CsvAttachment  $csvFile `
+        -HtmlAttachment $htmlFile `
+        -TotalMachines  $total `
+        -NotUpToDate    $notUpToDate
+}
+
+Write-Host ""
