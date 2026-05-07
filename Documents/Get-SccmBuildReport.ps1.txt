@@ -1,0 +1,217 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Haalt build- en versie-informatie op uit SCCM en exporteert dit naar
+    een CSV-bestand op de D-schijf.
+
+.DESCRIPTION
+    Maakt verbinding met de SCCM site server via WMI en haalt per beheerde
+    machine op: computernaam, OS-versie, buildnummer, servicepacks,
+    architectuur en laatste inventarisatiedatum.
+
+.PARAMETER SiteServer
+    Hostname of IP van de SCCM site server (SMS Provider).
+
+.PARAMETER SiteCode
+    SCCM-sitecode, bijv. "PS1". Wordt automatisch opgehaald als weggelaten.
+
+.PARAMETER CollectionName
+    Filter op een specifieke SCCM collectie. Leeg = alle systemen.
+
+.PARAMETER OutputFile
+    Volledig pad voor het CSV-bestand.
+    Standaard: D:\SCCM_BuildReport_<datum>.csv
+
+.PARAMETER Credential
+    Inloggegevens voor de SCCM site server. Niet vereist als het huidige
+    account al rechten heeft.
+
+.EXAMPLE
+    .\Get-SccmBuildReport.ps1 -SiteServer "sccm01.bedrijf.local"
+
+.EXAMPLE
+    .\Get-SccmBuildReport.ps1 -SiteServer "sccm01.bedrijf.local" `
+        -SiteCode "PS1" `
+        -CollectionName "Alle Servers"
+
+.EXAMPLE
+    .\Get-SccmBuildReport.ps1 -SiteServer "sccm01.bedrijf.local" `
+        -OutputFile "D:\Rapporten\SCCM_Builds.csv" `
+        -Credential (Get-Credential)
+
+.NOTES
+    Vereist leesrechten op de SCCM WMI namespace (root\SMS\site_<SiteCode>).
+    Het account moet lid zijn van de SCCM-rol "Read-only Analyst" of hoger.
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$SiteServer,
+
+    [string]$SiteCode = "",
+
+    [string]$CollectionName = "",
+
+    [string]$OutputFile = "",
+
+    [System.Management.Automation.PSCredential]
+    [System.Management.Automation.Credential()]
+    $Credential = [System.Management.Automation.PSCredential]::Empty
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Write-Section ([string]$Text) {
+    Write-Host "`n$('─' * 60)" -ForegroundColor DarkGray
+    Write-Host "  $Text" -ForegroundColor Cyan
+    Write-Host "$('─' * 60)" -ForegroundColor DarkGray
+}
+
+function New-CimParams ([string]$Namespace) {
+    $params = @{
+        ComputerName = $SiteServer
+        Namespace    = $Namespace
+        ErrorAction  = "Stop"
+    }
+    if ($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
+        $params["Credential"] = $Credential
+    }
+    return $params
+}
+
+# ─── Sitecode ophalen ─────────────────────────────────────────────────────────
+
+Write-Section "Verbinding maken met SCCM"
+Write-Host "  Server : $SiteServer"
+
+if ($SiteCode -eq "") {
+    try {
+        $siteInfo = Get-CimInstance @(New-CimParams "root\SMS") `
+            -ClassName SMS_ProviderLocation `
+            -Filter "ProviderForLocalSite = true"
+        $SiteCode = $siteInfo.SiteCode
+        Write-Host "  Sitecode gevonden: $SiteCode" -ForegroundColor Green
+    }
+    catch {
+        Write-Error "Kon sitecode niet automatisch ophalen: $_`nGeef de sitecode op via -SiteCode."
+        exit 1
+    }
+}
+
+$namespace = "root\SMS\site_$SiteCode"
+Write-Host "  Namespace: $namespace"
+
+# ─── Systemen ophalen ─────────────────────────────────────────────────────────
+
+Write-Section "Systemen ophalen uit SCCM"
+
+$cimParams = New-CimParams $namespace
+
+try {
+    if ($CollectionName -ne "") {
+        # Collectie opzoeken
+        $collectie = Get-CimInstance @cimParams -ClassName SMS_Collection `
+            -Filter "Name = '$CollectionName'" |
+            Select-Object -First 1
+
+        if (-not $collectie) {
+            Write-Warning "Collectie '$CollectionName' niet gevonden. Alle systemen worden gebruikt."
+            $systemen = Get-CimInstance @cimParams -ClassName SMS_R_System
+        }
+        else {
+            Write-Host "  Collectie : $CollectionName"
+            $leden = Get-CimInstance @cimParams -ClassName SMS_CollectionMember_a `
+                -Filter "CollectionID = '$($collectie.CollectionID)'"
+            $resourceIds = $leden.ResourceID -join ","
+            $systemen = Get-CimInstance @cimParams -ClassName SMS_R_System `
+                -Filter "ResourceID in ($resourceIds)"
+        }
+    }
+    else {
+        $systemen = Get-CimInstance @cimParams -ClassName SMS_R_System
+    }
+}
+catch {
+    Write-Error "Kon systemen niet ophalen: $_"
+    exit 1
+}
+
+Write-Host "  Gevonden: $($systemen.Count) systeem/systemen"
+
+# ─── Verwerken ────────────────────────────────────────────────────────────────
+
+Write-Section "Versie- en buildinformatie ophalen"
+
+$rapport = [System.Collections.Generic.List[PSCustomObject]]::new()
+$counter = 0
+$total   = $systemen.Count
+
+foreach ($systeem in $systemen) {
+    $counter++
+    Write-Progress -Activity "Gegevens ophalen" `
+        -Status "$($systeem.Name) ($counter/$total)" `
+        -PercentComplete ([math]::Round(($counter / $total) * 100))
+
+    # Hardware-inventaris: besturingssysteem
+    $os = Get-CimInstance @cimParams -ClassName SMS_G_System_OPERATING_SYSTEM `
+        -Filter "ResourceID = '$($systeem.ResourceID)'" |
+        Select-Object -First 1
+
+    # Hardware-inventaris: computersysteem (fabrikant/model)
+    $cs = Get-CimInstance @cimParams -ClassName SMS_G_System_COMPUTER_SYSTEM `
+        -Filter "ResourceID = '$($systeem.ResourceID)'" |
+        Select-Object -First 1
+
+    $rapport.Add([PSCustomObject]@{
+        Computernaam        = $systeem.Name
+        Domein              = $systeem.ResourceDomainORWorkgroup
+        Fabrikant           = if ($cs)  { $cs.Manufacturer }           else { "N/B" }
+        Model               = if ($cs)  { $cs.Model }                  else { "N/B" }
+        OS_Naam             = if ($os)  { $os.Caption }                else { $systeem.OperatingSystemNameandVersion }
+        OS_Versie           = if ($os)  { $os.Version }                else { "N/B" }
+        Build_Nummer        = if ($os)  { $os.BuildNumber }            else { "N/B" }
+        Service_Pack        = if ($os)  { $os.CSDVersion }             else { "N/B" }
+        Architectuur        = if ($os)  { $os.OSArchitecture }         else { "N/B" }
+        Laatste_Inventaris  = if ($systeem.LastHardwareScan) {
+                                  ([datetime]$systeem.LastHardwareScan).ToString("dd-MM-yyyy HH:mm")
+                              } else { "Nooit" }
+        Actief_Gebruiker    = $systeem.LastLogonUserName
+        SCCM_Client_Versie  = $systeem.ClientVersion
+    })
+}
+
+Write-Progress -Activity "Gegevens ophalen" -Completed
+
+# ─── Samenvatting ─────────────────────────────────────────────────────────────
+
+Write-Section "Samenvatting"
+Write-Host ("  Totaal verwerkt : {0}" -f $rapport.Count)
+
+$rapport | Group-Object OS_Naam | Sort-Object Count -Descending |
+    ForEach-Object { Write-Host ("  {0,-45} : {1}" -f $_.Name, $_.Count) }
+
+Write-Host ""
+$rapport | Sort-Object Computernaam |
+    Format-Table Computernaam, OS_Naam, Build_Nummer, OS_Versie, SCCM_Client_Versie -AutoSize
+
+# ─── CSV export ───────────────────────────────────────────────────────────────
+
+Write-Section "CSV exporteren"
+
+if ($OutputFile -eq "") {
+    $OutputFile = "D:\SCCM_BuildReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+}
+
+$outputDir = Split-Path $OutputFile -Parent
+if ($outputDir -and -not (Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+}
+
+$rapport | Sort-Object Computernaam |
+    Export-Csv -Path $OutputFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
+
+Write-Host "  CSV opgeslagen : $OutputFile" -ForegroundColor Green
+Write-Host "  Aantal regels  : $($rapport.Count)"
+Write-Host ""
