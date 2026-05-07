@@ -1,0 +1,248 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Leest versie-informatie uit van applicaties die draaien onder IIS,
+    lokaal of op een remote server.
+
+.DESCRIPTION
+    Het script haalt per IIS-site en applicatie de volgende informatie op:
+    - Site- en applicatienaam
+    - Fysiek pad
+    - Applicatieversie (uit DLL, EXE of web.config)
+    - IIS-versie
+    - Status van de site en application pool
+    - .NET / ASP.NET versie van de app pool
+
+.PARAMETER ComputerName
+    Server(s) waarop IIS draait. Standaard: lokale machine.
+
+.PARAMETER SiteFilter
+    Filter op sitenaam, bijv. "Default Web Site". Leeg = alle sites.
+
+.PARAMETER OutputPath
+    Map voor CSV export. Weglaten = alleen consoleuitvoer.
+
+.PARAMETER Credential
+    Inloggegevens voor remote servers. Niet vereist voor lokale uitvoering.
+
+.EXAMPLE
+    .\Get-IisApplicationVersion.ps1
+
+.EXAMPLE
+    .\Get-IisApplicationVersion.ps1 -ComputerName "webserver01"
+
+.EXAMPLE
+    .\Get-IisApplicationVersion.ps1 -ComputerName "webserver01","webserver02" `
+        -Credential (Get-Credential) `
+        -OutputPath "C:\Rapporten"
+
+.EXAMPLE
+    .\Get-IisApplicationVersion.ps1 -ComputerName "webserver01" `
+        -SiteFilter "MijnApplicatie" `
+        -OutputPath "C:\Rapporten"
+
+.NOTES
+    Vereist: IIS Management Tools op de doelserver.
+    Voor remote uitvoering: PowerShell Remoting (WinRM) actief.
+#>
+
+[CmdletBinding()]
+param(
+    [string[]]$ComputerName = @($env:COMPUTERNAME),
+
+    [string]$SiteFilter = "",
+
+    [string]$OutputPath = "",
+
+    [System.Management.Automation.PSCredential]
+    [System.Management.Automation.Credential()]
+    $Credential = [System.Management.Automation.PSCredential]::Empty
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Write-Section ([string]$Text) {
+    Write-Host "`n$('─' * 60)" -ForegroundColor DarkGray
+    Write-Host "  $Text" -ForegroundColor Cyan
+    Write-Host "$('─' * 60)" -ForegroundColor DarkGray
+}
+
+# ScriptBlock die op elke server wordt uitgevoerd (lokaal of remote)
+$queryBlock = {
+    param([string]$SiteFilter)
+
+    $resultaat = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    # IIS WebAdministration module laden
+    if (-not (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue)) {
+        try {
+            Import-Module WebAdministration -ErrorAction Stop
+        }
+        catch {
+            throw "WebAdministration module niet beschikbaar. Installeer IIS Management Tools."
+        }
+    }
+
+    # IIS versie ophalen
+    $iisVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\InetStp" -ErrorAction SilentlyContinue) |
+        Select-Object -ExpandProperty VersionString -ErrorAction SilentlyContinue
+    if (-not $iisVersion) { $iisVersion = "Onbekend" }
+
+    # Hulpfunctie: versie uit binaries of web.config halen
+    function Get-AppVersion ([string]$FysiekPad) {
+        if (-not $FysiekPad -or -not (Test-Path $FysiekPad)) {
+            return "Pad niet gevonden"
+        }
+
+        # 1. Zoek versie in web.config (aangepast veld)
+        $webConfig = Join-Path $FysiekPad "web.config"
+        if (Test-Path $webConfig) {
+            try {
+                [xml]$config = Get-Content $webConfig -ErrorAction Stop
+                $versieNode = $config.SelectSingleNode(
+                    "//appSettings/add[@key='Version' or @key='AppVersion' or @key='version']"
+                )
+                if ($versieNode) { return $versieNode.value }
+            }
+            catch { }
+        }
+
+        # 2. Zoek versie in DLL of EXE in de bin-map
+        $binPad = Join-Path $FysiekPad "bin"
+        $zoekPad = if (Test-Path $binPad) { $binPad } else { $FysiekPad }
+
+        $bestanden = Get-ChildItem -Path $zoekPad -Include "*.dll","*.exe" `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike "Microsoft.*" -and
+                           $_.Name -notlike "System.*" -and
+                           $_.Name -notlike "mscor*" } |
+            Sort-Object Length -Descending |
+            Select-Object -First 5
+
+        foreach ($bestand in $bestanden) {
+            $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($bestand.FullName)
+            if ($info.ProductVersion -and $info.ProductVersion -notmatch "^0\.0\.0") {
+                return $info.ProductVersion
+            }
+            if ($info.FileVersion -and $info.FileVersion -notmatch "^0\.0\.0") {
+                return $info.FileVersion
+            }
+        }
+
+        return "Niet gevonden"
+    }
+
+    # Sites ophalen
+    $sites = Get-Website
+    if ($SiteFilter -ne "") {
+        $sites = $sites | Where-Object { $_.Name -like "*$SiteFilter*" }
+    }
+
+    foreach ($site in $sites) {
+        # Applicaties binnen de site
+        $apps = Get-WebApplication -Site $site.Name -ErrorAction SilentlyContinue
+        # Voeg de root-applicatie ook toe
+        $allApps = @([PSCustomObject]@{
+            Path           = "/"
+            PhysicalPath   = $site.PhysicalPath
+            ApplicationPool = $site.ApplicationPool
+        }) + @($apps)
+
+        foreach ($app in $allApps) {
+            $fysiekPad = $app.PhysicalPath -replace "%SystemDrive%", $env:SystemDrive
+
+            # App pool info
+            $poolNaam = $app.ApplicationPool
+            $pool = Get-WebConfiguration "system.applicationHost/applicationPools/add[@name='$poolNaam']" `
+                -ErrorAction SilentlyContinue
+            $poolStatus = (Get-WebAppPoolState -Name $poolNaam -ErrorAction SilentlyContinue).Value
+            $dotNetVersie = if ($pool) { $pool.managedRuntimeVersion } else { "N/B" }
+            if ($dotNetVersie -eq "") { $dotNetVersie = "Geen (.NET Core/5+)" }
+
+            $versie = Get-AppVersion -FysiekPad $fysiekPad
+
+            $appNaam = if ($app.Path -eq "/") { "(root)" } else { $app.Path.TrimStart("/") }
+
+            $resultaat.Add([PSCustomObject]@{
+                Site            = $site.Name
+                Applicatie      = $appNaam
+                Versie          = $versie
+                IIS_Versie      = $iisVersion
+                Site_Status     = $site.State
+                AppPool         = $poolNaam
+                AppPool_Status  = $poolStatus ?? "Onbekend"
+                DotNet_Versie   = $dotNetVersie
+                Fysiek_Pad      = $fysiekPad
+                Poort           = ($site.Bindings.Collection | Select-Object -First 1).bindingInformation -replace ".*:"
+            })
+        }
+    }
+
+    return $resultaat
+}
+
+# ─── Uitvoeren per server ──────────────────────────────────────────────────────
+
+$rapport = [System.Collections.Generic.List[PSCustomObject]]::new()
+$isLokaal = ($ComputerName.Count -eq 1 -and
+             $ComputerName[0] -eq $env:COMPUTERNAME)
+
+foreach ($server in $ComputerName) {
+    Write-Section "IIS applicaties ophalen — $server"
+
+    try {
+        $resultaten = if ($isLokaal) {
+            & $queryBlock -SiteFilter $SiteFilter
+        }
+        else {
+            $invokeParams = @{
+                ComputerName  = $server
+                ScriptBlock   = $queryBlock
+                ArgumentList  = $SiteFilter
+                ErrorAction   = "Stop"
+            }
+            if ($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
+                $invokeParams["Credential"] = $Credential
+            }
+            Invoke-Command @invokeParams
+        }
+
+        foreach ($r in $resultaten) {
+            $rapport.Add([PSCustomObject]@{
+                Server          = $server
+                Site            = $r.Site
+                Applicatie      = $r.Applicatie
+                Versie          = $r.Versie
+                IIS_Versie      = $r.IIS_Versie
+                Site_Status     = $r.Site_Status
+                AppPool         = $r.AppPool
+                AppPool_Status  = $r.AppPool_Status
+                DotNet_Versie   = $r.DotNet_Versie
+                Fysiek_Pad      = $r.Fysiek_Pad
+                Poort           = $r.Poort
+            })
+        }
+
+        $resultaten | Sort-Object Site, Applicatie |
+            Format-Table Site, Applicatie, Versie, Site_Status, AppPool_Status, DotNet_Versie -AutoSize
+    }
+    catch {
+        Write-Warning "Kon IIS niet uitlezen op '$server': $_"
+    }
+}
+
+# ─── CSV export ───────────────────────────────────────────────────────────────
+
+if ($OutputPath -ne "" -and $rapport.Count -gt 0) {
+    if (-not (Test-Path $OutputPath)) {
+        New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+    }
+    $csvFile = Join-Path $OutputPath "IIS_Applicaties_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    $rapport | Sort-Object Server, Site, Applicatie |
+        Export-Csv -Path $csvFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
+    Write-Host "  CSV opgeslagen: $csvFile" -ForegroundColor Cyan
+}
+
+Write-Host ""
+return $rapport
