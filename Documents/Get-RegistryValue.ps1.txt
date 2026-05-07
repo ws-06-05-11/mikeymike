@@ -1,0 +1,172 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Vraagt een of meerdere registerwaarden op, lokaal of op een remote machine.
+
+.PARAMETER ComputerName
+    Machine(s) waarop het register wordt uitgelezen.
+    Standaard: lokale machine.
+
+.PARAMETER Path
+    Registerpad, bijv. "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion".
+    Ondersteunde hives: HKLM, HKCU, HKCR, HKU, HKCC.
+
+.PARAMETER ValueName
+    Naam van de registerwaarde. Weglaten = alle waarden in de sleutel.
+
+.PARAMETER OutputPath
+    Optioneel: exporteer resultaat naar CSV in deze map.
+
+.EXAMPLE
+    .\Get-RegistryValue.ps1 -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+
+.EXAMPLE
+    .\Get-RegistryValue.ps1 -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" `
+        -ValueName "CurrentBuild"
+
+.EXAMPLE
+    .\Get-RegistryValue.ps1 -ComputerName "server01","server02" `
+        -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" `
+        -ValueName "DisplayVersion" `
+        -OutputPath "C:\Rapporten"
+#>
+
+[CmdletBinding()]
+param(
+    [string[]]$ComputerName = @($env:COMPUTERNAME),
+
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+
+    [string]$ValueName = "",
+
+    [string]$OutputPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# Normaliseer het pad (HKLM:\ en HKLM\ zijn beide geldig)
+$Path = $Path -replace '^HKLM:\\', 'HKLM:\' `
+              -replace '^HKCU:\\', 'HKCU:\' `
+              -replace '^HKLM$|^HKLM\\', 'HKLM:\' `
+              -replace '^HKCU$|^HKCU\\', 'HKCU:\'
+
+function Read-RegistryLocal {
+    param([string]$RegPath, [string]$Name)
+
+    if (-not (Test-Path $RegPath)) {
+        Write-Warning "Pad niet gevonden: $RegPath"
+        return @()
+    }
+
+    $item = Get-Item -Path $RegPath
+
+    if ($Name -ne "") {
+        $val = $item.GetValue($Name, $null)
+        if ($null -eq $val) {
+            Write-Warning "Waarde '$Name' niet gevonden in $RegPath"
+            return @()
+        }
+        return @([PSCustomObject]@{
+            Naam  = $Name
+            Waarde = $val
+            Type  = $item.GetValueKind($Name)
+        })
+    }
+
+    return $item.GetValueNames() | ForEach-Object {
+        [PSCustomObject]@{
+            Naam   = $_
+            Waarde = $item.GetValue($_)
+            Type   = $item.GetValueKind($_)
+        }
+    }
+}
+
+function Read-RegistryRemote {
+    param([string]$Computer, [string]$RegPath, [string]$Name)
+
+    try {
+        $result = Invoke-Command -ComputerName $Computer -ArgumentList $RegPath, $Name -ScriptBlock {
+            param($RegPath, $Name)
+
+            if (-not (Test-Path $RegPath)) { return $null }
+
+            $item = Get-Item -Path $RegPath
+
+            if ($Name -ne "") {
+                $val = $item.GetValue($Name, $null)
+                if ($null -eq $val) { return $null }
+                return @([PSCustomObject]@{
+                    Naam   = $Name
+                    Waarde = $val
+                    Type   = $item.GetValueKind($Name)
+                })
+            }
+
+            return $item.GetValueNames() | ForEach-Object {
+                [PSCustomObject]@{
+                    Naam   = $_
+                    Waarde = $item.GetValue($_)
+                    Type   = $item.GetValueKind($_)
+                }
+            }
+        } -ErrorAction Stop
+
+        return $result
+    }
+    catch {
+        Write-Warning "Kon register niet uitlezen op '$Computer': $_"
+        return $null
+    }
+}
+
+# ─── Uitvoeren ────────────────────────────────────────────────────────────────
+
+$rapport = [System.Collections.Generic.List[PSCustomObject]]::new()
+$isLokaal = ($ComputerName.Count -eq 1 -and
+             $ComputerName[0] -eq $env:COMPUTERNAME)
+
+foreach ($computer in $ComputerName) {
+    Write-Host "`nMachine: $computer" -ForegroundColor Cyan
+    Write-Host "  Pad   : $Path"
+    if ($ValueName -ne "") { Write-Host "  Naam  : $ValueName" }
+
+    $waarden = if ($isLokaal) {
+        Read-RegistryLocal -RegPath $Path -Name $ValueName
+    } else {
+        Read-RegistryRemote -Computer $computer -RegPath $Path -Name $ValueName
+    }
+
+    if (-not $waarden) {
+        Write-Host "  Geen waarden gevonden." -ForegroundColor Yellow
+        continue
+    }
+
+    foreach ($w in $waarden) {
+        Write-Host ("  {0,-35} {1,-12} {2}" -f $w.Naam, "[$($w.Type)]", $w.Waarde)
+
+        $rapport.Add([PSCustomObject]@{
+            Computer = $computer
+            Pad      = $Path
+            Naam     = $w.Naam
+            Waarde   = $w.Waarde
+            Type     = $w.Type
+        })
+    }
+}
+
+# ─── Optionele CSV export ─────────────────────────────────────────────────────
+
+if ($OutputPath -ne "" -and $rapport.Count -gt 0) {
+    if (-not (Test-Path $OutputPath)) {
+        New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+    }
+    $csvFile = Join-Path $OutputPath "Registry_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    $rapport | Export-Csv -Path $csvFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
+    Write-Host "`nResultaat opgeslagen: $csvFile" -ForegroundColor Green
+}
+
+# Geef resultaat terug als object (bruikbaar in pipeline)
+return $rapport
