@@ -5,190 +5,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MikeyBox - Hardlopen</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #0f0f0f;
-            color: #fff;
-            min-height: 100vh;
-            padding: 2rem;
-        }
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 2rem;
-            border-bottom: 1px solid #222;
-            padding-bottom: 1rem;
-        }
-        header h1 {
-            font-size: 1.8rem;
-            letter-spacing: 3px;
-            color: #00d4ff;
-            text-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
-        }
-        header nav a {
-            color: #aaa;
-            text-decoration: none;
-            font-size: 0.9rem;
-            margin-left: 1.5rem;
-        }
-        header nav a:hover { color: #00d4ff; }
-        .layout {
-            display: grid;
-            grid-template-columns: 320px 1fr;
-            gap: 2rem;
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-        .card {
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 8px;
-            padding: 1.5rem;
-        }
-        .card h2 { font-size: 1rem; color: #aaa; margin-bottom: 1.2rem; text-transform: uppercase; letter-spacing: 1px; }
-        .form-group { margin-bottom: 1rem; }
-        label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 0.3rem; }
-        input[type="date"], input[type="number"], input[type="text"] {
-            width: 100%;
-            padding: 0.6rem 0.8rem;
-            background: #0f0f0f;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #fff;
-            font-size: 0.95rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        input[type="date"]:focus,
-        input[type="number"]:focus,
-        input[type="text"]:focus { border-color: #00d4ff; }
-        .duration-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-        .btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: #00d4ff;
-            color: #0f0f0f;
-            border: none;
-            border-radius: 4px;
-            font-size: 0.95rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 0.5rem;
-        }
-        .btn:hover { background: #00aacc; }
-        .runs-section h2 { font-size: 1rem; color: #aaa; margin-bottom: 1.2rem; text-transform: uppercase; letter-spacing: 1px; }
-        .empty { color: #444; font-size: 0.95rem; padding: 1rem 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th {
-            text-align: left;
-            font-size: 0.75rem;
-            color: #555;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            padding: 0.5rem 0.8rem;
-            border-bottom: 1px solid #222;
-        }
-        td {
-            padding: 0.8rem;
-            border-bottom: 1px solid #1a1a1a;
-            font-size: 0.9rem;
-            color: #ccc;
-        }
-        tr:hover td { background: #151515; }
-        .stat-distance { color: #fff; font-weight: bold; }
-        .stat-pace { color: #00d4ff; }
-        .notes-cell { color: #666; font-size: 0.85rem; }
-        .stats-bar {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-        .stat-box {
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 8px;
-            padding: 1rem 1.2rem;
-        }
-        .stat-box .label { font-size: 0.75rem; color: #555; text-transform: uppercase; letter-spacing: 1px; }
-        .stat-box .value { font-size: 1.6rem; color: #00d4ff; font-weight: bold; margin-top: 0.2rem; }
-        footer { text-align: center; color: #333; font-size: 0.8rem; margin-top: 3rem; }
-    </style>
+    <title>MikeyBox &mdash; Hardlopen</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}">
 </head>
 <body>
-    <header>
-        <h1>MIKEYBOX</h1>
-        <nav>
-            <a th:href="@{/dashboard}">Dashboard</a>
-            <form method="post" th:action="@{/logout}" style="display:inline">
-                <button type="submit" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.9rem;margin-left:1.5rem;">
-                    Uitloggen
-                </button>
-            </form>
-        </nav>
-    </header>
 
-    <div class="layout">
-        <div>
-            <div class="card">
-                <h2>Training toevoegen</h2>
-                <form method="post" th:action="@{/runs}">
-                    <div class="form-group">
-                        <label>Datum</label>
-                        <input type="date" name="date" th:value="${today}" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Afstand (km)</label>
-                        <input type="number" name="distanceKm" step="0.01" min="0.1" placeholder="10.0" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Tijd</label>
-                        <div class="duration-row">
-                            <input type="number" name="durationMinutes" min="0" placeholder="Min" required>
-                            <input type="number" name="durationSeconds" min="0" max="59" placeholder="Sec" required>
+    <div th:replace="~{fragments/nav :: topnav('runs')}"></div>
+
+    <!-- Stats strip -->
+    <div class="stats-strip" th:if="${!runs.isEmpty()}">
+        <div class="stat-cell">
+            <div class="stat-label">Trainingen</div>
+            <div class="stat-number" th:attr="data-count=${runs.size()}" th:text="${runs.size()}">0</div>
+        </div>
+        <div class="stat-cell">
+            <div class="stat-label">Totaal km</div>
+            <div class="stat-number"
+                 th:attr="data-count=${#numbers.formatDecimal(totalKm, 1, 1)}"
+                 th:text="${#numbers.formatDecimal(totalKm, 1, 1)}">0</div>
+            <span class="stat-unit">km</span>
+        </div>
+        <div class="stat-cell">
+            <div class="stat-label">Beste tempo</div>
+            <div class="stat-number" th:text="${bestPace}">—</div>
+            <span class="stat-unit" th:if="${bestPace != '—'}">/km</span>
+        </div>
+    </div>
+
+    <!-- Body -->
+    <div class="runs-body">
+
+        <!-- Sidebar: add form -->
+        <aside class="sidebar">
+            <div class="sidebar-title">Training toevoegen</div>
+            <form method="post" th:action="@{/runs}">
+                <div class="field">
+                    <label>Datum</label>
+                    <input type="date" name="date" th:value="${today}" required>
+                </div>
+                <div class="field">
+                    <label>Afstand (km)</label>
+                    <input type="number" name="distanceKm" step="0.01" min="0.1" placeholder="10.00" required>
+                </div>
+                <div class="field">
+                    <label>Tijd</label>
+                    <div class="field-row">
+                        <div>
+                            <label>Min</label>
+                            <input type="number" name="durationMinutes" min="0" placeholder="42" required>
+                        </div>
+                        <div>
+                            <label>Sec</label>
+                            <input type="number" name="durationSeconds" min="0" max="59" placeholder="00" required>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label>Notities (optioneel)</label>
-                        <input type="text" name="notes" placeholder="Intervaltraining, easy run...">
-                    </div>
-                    <button type="submit" class="btn">Opslaan</button>
-                </form>
-            </div>
-        </div>
+                </div>
+                <div class="field">
+                    <label>Notities (optioneel)</label>
+                    <input type="text" name="notes" placeholder="Easy run, intervals...">
+                </div>
+                <button type="submit" class="btn-lime">Opslaan</button>
+            </form>
+        </aside>
 
-        <div class="runs-section">
-            <div th:if="${!runs.isEmpty()}" class="stats-bar">
-                <div class="stat-box">
-                    <div class="label">Totaal trainingen</div>
-                    <div class="value" th:text="${runs.size()}">0</div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">Totale afstand</div>
-                    <div class="value"
-                         th:text="${#numbers.formatDecimal(runs.stream().mapToDouble(r -> r.distanceKm).sum(), 1, 1) + ' km'}">
-                        0 km
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="label">Langste run</div>
-                    <div class="value"
-                         th:text="${#numbers.formatDecimal(runs.stream().mapToDouble(r -> r.distanceKm).max().orElse(0), 1, 1) + ' km'}">
-                        0 km
-                    </div>
-                </div>
+        <!-- Main: runs list -->
+        <main class="main-area">
+            <div th:if="${runs.isEmpty()}" class="empty-state">
+                Nog geen trainingen &mdash; voeg je eerste toe
             </div>
 
-            <h2>Trainingen</h2>
-
-            <p th:if="${runs.isEmpty()}" class="empty">Nog geen trainingen gelogd.</p>
-
-            <table th:if="${!runs.isEmpty()}">
+            <table th:if="${!runs.isEmpty()}" class="runs-table">
                 <thead>
                     <tr>
                         <th>Datum</th>
@@ -200,17 +86,38 @@
                 </thead>
                 <tbody>
                     <tr th:each="run : ${runs}">
-                        <td th:text="${run.date}"></td>
-                        <td class="stat-distance" th:text="${#numbers.formatDecimal(run.distanceKm, 1, 2) + ' km'}"></td>
-                        <td th:text="${run.durationFormatted}"></td>
-                        <td class="stat-pace" th:text="${run.pace}"></td>
-                        <td class="notes-cell" th:text="${run.notes != null ? run.notes : ''}"></td>
+                        <td class="td-date" th:text="${run.dateFormatted}"></td>
+                        <td class="td-dist">
+                            <span th:text="${#numbers.formatDecimal(run.distanceKm, 1, 2)}"></span>
+                            <span class="unit">km</span>
+                        </td>
+                        <td class="td-dur" th:text="${run.durationFormatted}"></td>
+                        <td class="td-pace" th:text="${run.pace}"></td>
+                        <td class="td-notes" th:text="${run.notes != null ? run.notes : ''}"></td>
                     </tr>
                 </tbody>
             </table>
-        </div>
+        </main>
     </div>
 
-    <footer>mikeybox.zapto.org</footer>
+    <script>
+        document.querySelectorAll('[data-count]').forEach(function (el) {
+            var raw = el.getAttribute('data-count').replace(',', '.');
+            var target = parseFloat(raw);
+            if (isNaN(target)) { return; }
+            var isInt = Number.isInteger(target);
+            var duration = 700;
+            var start = performance.now();
+            function tick(now) {
+                var p = Math.min((now - start) / duration, 1);
+                var eased = 1 - Math.pow(1 - p, 3);
+                el.textContent = isInt
+                    ? Math.round(target * eased)
+                    : (target * eased).toFixed(1).replace('.', ',');
+                if (p < 1) { requestAnimationFrame(tick); }
+            }
+            requestAnimationFrame(tick);
+        });
+    </script>
 </body>
 </html>

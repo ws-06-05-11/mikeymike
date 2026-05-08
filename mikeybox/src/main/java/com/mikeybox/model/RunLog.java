@@ -7,6 +7,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 @Entity
 @Table(name = "run_logs")
@@ -29,6 +31,10 @@ public class RunLog {
     private Integer durationSeconds;
 
     private String notes;
+
+    public String getDateFormatted() {
+        return date.format(DateTimeFormatter.ofPattern("dd MMM", new Locale("nl", "NL")));
+    }
 
     public String getDurationFormatted() {
         int h = durationSeconds / 3600;

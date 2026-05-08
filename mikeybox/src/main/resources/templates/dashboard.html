@@ -5,76 +5,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MikeyBox - Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #0f0f0f;
-            color: #fff;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        .container { text-align: center; padding: 2rem; }
-        h1 {
-            font-size: 4rem;
-            letter-spacing: 4px;
-            color: #00d4ff;
-            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
-            margin-bottom: 1rem;
-        }
-        .welcome { font-size: 1.2rem; color: #aaa; margin-bottom: 0.5rem; }
-        .username { color: #00d4ff; font-weight: bold; }
-        .logout-btn {
-            display: inline-block;
-            margin-top: 2rem;
-            padding: 0.7rem 1.8rem;
-            background: transparent;
-            color: #ff5555;
-            border: 1px solid #ff5555;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            font-weight: bold;
-            cursor: pointer;
-            text-decoration: none;
-            transition: background 0.2s, color 0.2s;
-        }
-        .logout-btn:hover { background: #ff5555; color: #0f0f0f; }
-        .nav-btn {
-            display: inline-block;
-            margin-top: 2rem;
-            margin-right: 1rem;
-            padding: 0.7rem 1.8rem;
-            background: transparent;
-            color: #00d4ff;
-            border: 1px solid #00d4ff;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            font-weight: bold;
-            text-decoration: none;
-            transition: background 0.2s, color 0.2s;
-        }
-        .nav-btn:hover { background: #00d4ff; color: #0f0f0f; }
-        footer { position: fixed; bottom: 1rem; color: #555; font-size: 0.8rem; }
-    </style>
+    <title>MikeyBox</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}">
 </head>
-<body>
-    <div class="container">
-        <h1>MIKEYBOX</h1>
-        <p class="welcome">
-            Welkom, <span class="username" sec:authentication="name">gebruiker</span>
-        </p>
-        <p style="color: #555; font-size: 0.9rem; margin-top: 0.3rem;">Je bent ingelogd</p>
-        <div>
-            <a th:href="@{/runs}" class="nav-btn">Hardlopen</a>
-        </div>
-        <form method="post" th:action="@{/logout}">
-            <button type="submit" class="logout-btn">Uitloggen</button>
-        </form>
+<body class="dash-page">
+    <div class="dash-logo a1">MIKEYBOX</div>
+    <div class="dash-rule a2"></div>
+    <div class="dash-welcome a2">
+        Welkom, <span sec:authentication="name">gebruiker</span>
     </div>
-    <footer>mikeybox.zapto.org</footer>
+
+    <div class="module-list a3">
+        <a th:href="@{/runs}" class="module-tile">
+            <div class="module-text">
+                <span class="module-name">Hardlopen</span>
+                <span class="module-desc">log je trainings runs</span>
+            </div>
+            <span class="module-arrow">&#x2192;</span>
+        </a>
+        <a th:href="@{/weight}" class="module-tile">
+            <div class="module-text">
+                <span class="module-name">Gewicht</span>
+                <span class="module-desc">volg je gewicht over tijd</span>
+            </div>
+            <span class="module-arrow">&#x2192;</span>
+        </a>
+        <a th:href="@{/standby}" class="module-tile">
+            <div class="module-text">
+                <span class="module-name">Standby</span>
+                <span class="module-desc">rooster &amp; rotatie</span>
+            </div>
+            <span class="module-arrow">&#x2192;</span>
+        </a>
+        <a th:href="@{/vakantie}" class="module-tile">
+            <div class="module-text">
+                <span class="module-name">Vakantie</span>
+                <span class="module-desc">verlofperiodes per persoon</span>
+            </div>
+            <span class="module-arrow">&#x2192;</span>
+        </a>
+    </div>
+
+    <form method="post" th:action="@{/logout}" class="a4">
+        <button type="submit" class="btn-ghost-danger">Uitloggen</button>
+    </form>
 </body>
 </html>

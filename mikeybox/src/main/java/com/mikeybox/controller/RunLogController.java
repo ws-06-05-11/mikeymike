@@ -3,6 +3,7 @@ package com.mikeybox.controller;
 import com.mikeybox.model.RunLog;
 import com.mikeybox.repository.RunLogRepository;
 import java.time.LocalDate;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -25,8 +26,11 @@ public class RunLogController {
 
     @GetMapping
     public String list(@AuthenticationPrincipal UserDetails user, Model model) {
-        model.addAttribute("runs", runLogRepository.findByUsernameOrderByDateDesc(user.getUsername()));
+        List<RunLog> runs = runLogRepository.findByUsernameOrderByDateDesc(user.getUsername());
+        model.addAttribute("runs", runs);
         model.addAttribute("today", LocalDate.now().toString());
+        model.addAttribute("totalKm", runs.stream().mapToDouble(RunLog::getDistanceKm).sum());
+        model.addAttribute("bestPace", bestPace(runs));
         return "runs";
     }
 
@@ -49,5 +53,15 @@ public class RunLogController {
         }
         runLogRepository.save(log);
         return "redirect:/runs";
+    }
+
+    private String bestPace(List<RunLog> runs) {
+        return runs.stream()
+            .mapToDouble(r -> r.getDurationSeconds() / r.getDistanceKm())
+            .min()
+            .stream()
+            .mapToObj(s -> String.format("%d:%02d", (int) s / 60, (int) s % 60))
+            .findFirst()
+            .orElse("—");
     }
 }
