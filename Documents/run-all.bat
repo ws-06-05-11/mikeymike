@@ -8,7 +8,7 @@ echo.
 REM === CONFIGURATIE - pas aan voor jouw omgeving ===
 set "ORCH_SERVER=orch01.bedrijf.local"
 set "SCCM_SERVER=sccm01.bedrijf.local"
-set "REG_PATH=HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+set "REG_PATH=HKLM:\SOFTWARE\Titaan\USIVersion"
 set "OUTPUT_BASE=D:\output"
 set "SERVERS_FILE=%~dp0servers.txt"
 
