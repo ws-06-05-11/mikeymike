@@ -201,7 +201,7 @@ $rapport | Sort-Object Computernaam |
 Write-Section "CSV exporteren"
 
 if ($OutputFile -eq "") {
-    $OutputFile = "D:\SCCM_BuildReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    $OutputFile = "D:\output\Source4\SCCM_BuildReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
 }
 
 $outputDir = Split-Path $OutputFile -Parent

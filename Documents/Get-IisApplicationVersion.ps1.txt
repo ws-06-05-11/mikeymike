@@ -244,5 +244,10 @@ if ($OutputPath -ne "" -and $rapport.Count -gt 0) {
     Write-Host "  CSV opgeslagen: $csvFile" -ForegroundColor Cyan
 }
 
+if ($rapport.Count -gt 0) {
+    if (-not (Test-Path "D:\output\Source3")) { New-Item -ItemType Directory -Path "D:\output\Source3" -Force | Out-Null }
+    $rapport | Sort-Object Server, Site, Applicatie | Export-Csv -Path "D:\output\Source3\IIS_Applicaties_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8
+}
+
 Write-Host ""
 return $rapport

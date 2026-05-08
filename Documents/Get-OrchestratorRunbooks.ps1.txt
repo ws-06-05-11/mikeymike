@@ -162,4 +162,9 @@ $rapport | Sort-Object Pad, Naam |
     Export-Csv -Path $csvFile -NoTypeInformation -Delimiter ";" -Encoding UTF8
 
 Write-Host "`n  CSV opgeslagen: $csvFile" -ForegroundColor Cyan
+
+$d = "D:\output\Source2"
+if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+$rapport | Sort-Object Pad, Naam | Export-Csv -Path "$d\Orchestrator_Runbooks_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8
+
 Write-Host ""

@@ -168,5 +168,10 @@ if ($OutputPath -ne "" -and $rapport.Count -gt 0) {
     Write-Host "`nResultaat opgeslagen: $csvFile" -ForegroundColor Green
 }
 
+if ($rapport.Count -gt 0) {
+    if (-not (Test-Path "D:\output\Source1")) { New-Item -ItemType Directory -Path "D:\output\Source1" -Force | Out-Null }
+    $rapport | Export-Csv -Path "D:\output\Source1\Registry_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8
+}
+
 # Geef resultaat terug als object (bruikbaar in pipeline)
 return $rapport
