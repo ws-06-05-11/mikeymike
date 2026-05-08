@@ -117,33 +117,33 @@ return @"
     <title>IT Operations Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background-color: #1b2a4a; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        header { background-color: #0f1e36; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a9fd4; flex-shrink: 0; }
+        body { background-color: #243d6b; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        header { background-color: #1a2e52; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a9fd4; flex-shrink: 0; }
         header h1 { font-size: 1.2rem; font-weight: 600; color: #4a9fd4; letter-spacing: 1px; text-transform: uppercase; }
         .header-right { display: flex; align-items: center; gap: 16px; font-size: 0.75rem; color: #7a9fc4; }
-        .refresh-btn { background: #4a9fd4; color: #0f1e36; border: none; padding: 4px 14px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+        .refresh-btn { background: #4a9fd4; color: #1a2e52; border: none; padding: 4px 14px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
         .refresh-btn:hover { background: #6ab4e8; }
         #cd { color: #f0a500; font-weight: 700; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 10px; flex: 1; overflow: hidden; }
-        .panel { background-color: #243454; border-radius: 6px; border: 1px solid #2e4070; display: flex; flex-direction: column; overflow: hidden; }
-        .panel-header { background-color: #1b3060; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a9fd4; flex-shrink: 0; }
+        .panel { background-color: #2e4d7a; border-radius: 6px; border: 1px solid #3a5282; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { background-color: #28426e; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a9fd4; flex-shrink: 0; }
         .panel-header h2 { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #4a9fd4; }
-        .panel-header .badge { font-size: 0.68rem; background-color: #f0a500; color: #1b2a4a; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
-        .source-label { font-size: 0.63rem; color: #4a6080; padding: 4px 12px 3px; background-color: #1e2e4a; flex-shrink: 0; }
+        .panel-header .badge { font-size: 0.68rem; background-color: #f0a500; color: #243d6b; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+        .source-label { font-size: 0.63rem; color: #5a7090; padding: 4px 12px 3px; background-color: #263f6a; flex-shrink: 0; }
         .panel-body { flex: 1; overflow-y: auto; }
         .panel-body::-webkit-scrollbar { width: 5px; }
-        .panel-body::-webkit-scrollbar-track { background: #1b2a4a; }
+        .panel-body::-webkit-scrollbar-track { background: #243d6b; }
         .panel-body::-webkit-scrollbar-thumb { background: #4a9fd4; border-radius: 3px; }
         table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
-        thead th { background-color: #162540; padding: 5px 10px; text-align: left; font-weight: 600; color: #7aafd4; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
-        tbody tr:nth-child(even) { background-color: #1f2e48; }
-        tbody tr:hover { background-color: #2a4070; }
-        tbody td { padding: 5px 10px; border-bottom: 1px solid #253550; color: #c8daf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        thead th { background-color: #1f3660; padding: 5px 10px; text-align: left; font-weight: 600; color: #7aafd4; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        tbody tr:nth-child(even) { background-color: #294468; }
+        tbody tr:hover { background-color: #334e7c; }
+        tbody td { padding: 5px 10px; border-bottom: 1px solid #2e4462; color: #c8daf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
         .ok   { color: #4caf50; font-weight: 600; }
         .stop { color: #e94560; font-weight: 600; }
         .warn { color: #f0a500; font-weight: 600; }
-        .no-data { color: #4a6080; font-style: italic; text-align: center; padding: 20px; }
-        footer { background-color: #0f1e36; padding: 5px 20px; font-size: 0.65rem; color: #4a6080; border-top: 1px solid #253550; flex-shrink: 0; display: flex; justify-content: space-between; }
+        .no-data { color: #5a7090; font-style: italic; text-align: center; padding: 20px; }
+        footer { background-color: #1a2e52; padding: 5px 20px; font-size: 0.65rem; color: #5a7090; border-top: 1px solid #2e4462; flex-shrink: 0; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
