@@ -1,0 +1,213 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Genereert een HTML dashboard van de CSV output van de 4 scripts.
+
+.PARAMETER OutputBase
+    Basismap waar de Source1-4 mappen staan en het dashboard wordt opgeslagen.
+    Standaard: D:\output
+#>
+
+[CmdletBinding()]
+param(
+    [string]$OutputBase = "D:\output"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Get-LatestCsv ([string]$Folder) {
+    if (-not (Test-Path $Folder)) { return $null }
+    Get-ChildItem -Path $Folder -Filter "*.csv" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function ConvertTo-HtmlRows {
+    param(
+        $Data,
+        [string[]]$Columns,
+        [hashtable]$StatusColumns = @{}
+    )
+
+    if (-not $Data -or $Data.Count -eq 0) { return "" }
+
+    $sb = [System.Text.StringBuilder]::new()
+    foreach ($row in $Data) {
+        [void]$sb.Append("<tr>")
+        foreach ($col in $Columns) {
+            $val = if ($null -ne $row.$col) { $row.$col.ToString() } else { "" }
+            $escaped = $val -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
+
+            $class = ""
+            if ($StatusColumns.ContainsKey($col)) {
+                $type = $StatusColumns[$col]
+                if ($type -eq "status") {
+                    if     ($val -match "Start|Running")   { $class = ' class="ok"'   }
+                    elseif ($val -match "Stop|Error")      { $class = ' class="stop"' }
+                    elseif ($val -match "Unknown|Niet")    { $class = ' class="warn"' }
+                } elseif ($type -eq "notempty") {
+                    if ($val -ne "-" -and $val -ne "") { $class = ' class="warn"' }
+                }
+            }
+
+            [void]$sb.Append("<td$class>$escaped</td>")
+        }
+        [void]$sb.Append("</tr>")
+    }
+    return $sb.ToString()
+}
+
+Write-Host "`nDashboard genereren..." -ForegroundColor Cyan
+
+$csv1 = Get-LatestCsv "$OutputBase\Source1"
+$csv2 = Get-LatestCsv "$OutputBase\Source2"
+$csv3 = Get-LatestCsv "$OutputBase\Source3"
+$csv4 = Get-LatestCsv "$OutputBase\Source4"
+
+$data1 = if ($csv1) { Import-Csv -Path $csv1.FullName -Delimiter ";" } else { @() }
+$data2 = if ($csv2) { Import-Csv -Path $csv2.FullName -Delimiter ";" } else { @() }
+$data3 = if ($csv3) { Import-Csv -Path $csv3.FullName -Delimiter ";" } else { @() }
+$data4 = if ($csv4) { Import-Csv -Path $csv4.FullName -Delimiter ";" } else { @() }
+
+$label1 = if ($csv1) { $csv1.Name } else { "Geen data" }
+$label2 = if ($csv2) { $csv2.Name } else { "Geen data" }
+$label3 = if ($csv3) { $csv3.Name } else { "Geen data" }
+$label4 = if ($csv4) { $csv4.Name } else { "Geen data" }
+
+$rows1 = ConvertTo-HtmlRows -Data $data1 -Columns @("Computer","Pad","Naam","Waarde","Type")
+$rows2 = ConvertTo-HtmlRows -Data $data2 -Columns @("Naam","Pad","Gewijzigd","Uitgecheckt_Door") `
+    -StatusColumns @{ Uitgecheckt_Door = "notempty" }
+$rows3 = ConvertTo-HtmlRows -Data $data3 `
+    -Columns @("Server","Site","Applicatie","Versie","Site_Status","AppPool_Status","DotNet_Versie") `
+    -StatusColumns @{ Site_Status = "status"; AppPool_Status = "status" }
+$rows4 = ConvertTo-HtmlRows -Data $data4 `
+    -Columns @("Computernaam","OS_Naam","Build_Nummer","Architectuur","SCCM_Client_Versie","Laatste_Inventaris")
+
+$noData1 = if (-not $rows1) { "<tr><td colspan='5' class='no-data'>Geen data beschikbaar</td></tr>" } else { "" }
+$noData2 = if (-not $rows2) { "<tr><td colspan='4' class='no-data'>Geen data beschikbaar</td></tr>" } else { "" }
+$noData3 = if (-not $rows3) { "<tr><td colspan='7' class='no-data'>Geen data beschikbaar</td></tr>" } else { "" }
+$noData4 = if (-not $rows4) { "<tr><td colspan='6' class='no-data'>Geen data beschikbaar</td></tr>" } else { "" }
+
+$timestamp = Get-Date -Format "dd-MM-yyyy HH:mm:ss"
+$hostname  = $env:COMPUTERNAME
+
+$html = @"
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Operations Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #1b2a4a; color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        header { background-color: #0f1e36; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a9fd4; flex-shrink: 0; }
+        header h1 { font-size: 1.2rem; font-weight: 600; color: #4a9fd4; letter-spacing: 1px; text-transform: uppercase; }
+        header .timestamp { font-size: 0.75rem; color: #7a9fc4; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 10px; flex: 1; overflow: hidden; }
+        .panel { background-color: #243454; border-radius: 6px; border: 1px solid #2e4070; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { background-color: #1b3060; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a9fd4; flex-shrink: 0; }
+        .panel-header h2 { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #4a9fd4; }
+        .panel-header .badge { font-size: 0.68rem; background-color: #f0a500; color: #1b2a4a; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+        .source-label { font-size: 0.63rem; color: #4a6080; padding: 4px 12px 3px; background-color: #1e2e4a; flex-shrink: 0; }
+        .panel-body { flex: 1; overflow-y: auto; }
+        .panel-body::-webkit-scrollbar { width: 5px; }
+        .panel-body::-webkit-scrollbar-track { background: #1b2a4a; }
+        .panel-body::-webkit-scrollbar-thumb { background: #4a9fd4; border-radius: 3px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+        thead th { background-color: #162540; padding: 5px 10px; text-align: left; font-weight: 600; color: #7aafd4; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        tbody tr:nth-child(even) { background-color: #1f2e48; }
+        tbody tr:hover { background-color: #2a4070; }
+        tbody td { padding: 5px 10px; border-bottom: 1px solid #253550; color: #c8daf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .ok   { color: #4caf50; font-weight: 600; }
+        .stop { color: #e94560; font-weight: 600; }
+        .warn { color: #f0a500; font-weight: 600; }
+        .no-data { color: #4a6080; font-style: italic; text-align: center; padding: 20px; }
+        footer { background-color: #0f1e36; padding: 5px 20px; font-size: 0.65rem; color: #4a6080; border-top: 1px solid #253550; flex-shrink: 0; text-align: center; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>&#9670; IT Operations Dashboard</h1>
+    <span class="timestamp">Gegenereerd: $timestamp &nbsp;|&nbsp; $hostname</span>
+</header>
+
+<div class="grid">
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128274; Register Waarden</h2>
+            <span class="badge">Source 1</span>
+        </div>
+        <div class="source-label">$OutputBase\Source1 &mdash; $label1</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Computer</th><th>Pad</th><th>Naam</th><th>Waarde</th><th>Type</th></tr></thead>
+                <tbody>$rows1$noData1</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#9881; Orchestrator Runbooks</h2>
+            <span class="badge">Source 2</span>
+        </div>
+        <div class="source-label">$OutputBase\Source2 &mdash; $label2</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Naam</th><th>Pad</th><th>Gewijzigd</th><th>Uitgecheckt</th></tr></thead>
+                <tbody>$rows2$noData2</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#127760; IIS Applicaties</h2>
+            <span class="badge">Source 3</span>
+        </div>
+        <div class="source-label">$OutputBase\Source3 &mdash; $label3</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Server</th><th>Site</th><th>Applicatie</th><th>Versie</th><th>Status</th><th>App Pool</th><th>.NET</th></tr></thead>
+                <tbody>$rows3$noData3</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128187; SCCM Build Report</h2>
+            <span class="badge">Source 4</span>
+        </div>
+        <div class="source-label">$OutputBase\Source4 &mdash; $label4</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Computernaam</th><th>OS</th><th>Build</th><th>Arch</th><th>SCCM Client</th><th>Inventaris</th></tr></thead>
+                <tbody>$rows4$noData4</tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    IT Operations Dashboard &nbsp;|&nbsp; Source1: Registry &nbsp;|&nbsp; Source2: Orchestrator &nbsp;|&nbsp; Source3: IIS &nbsp;|&nbsp; Source4: SCCM
+</footer>
+
+</body>
+</html>
+"@
+
+if (-not (Test-Path $OutputBase)) {
+    New-Item -ItemType Directory -Path $OutputBase -Force | Out-Null
+}
+
+$outputFile = "$OutputBase\dashboard.html"
+$html | Out-File -FilePath $outputFile -Encoding UTF8 -Force
+
+Write-Host "  Dashboard: $outputFile" -ForegroundColor Green
+Write-Host "  Rijen: Source1=$($data1.Count) | Source2=$($data2.Count) | Source3=$($data3.Count) | Source4=$($data4.Count)"
