@@ -35,8 +35,7 @@
 param(
     [string[]]$ComputerName = @($env:COMPUTERNAME),
 
-    [Parameter(Mandatory = $true)]
-    [string]$Path,
+    [string]$Path = "HKLM:\SOFTWARE\Titaan\USIVersion",
 
     [string]$ValueName = "",
 
