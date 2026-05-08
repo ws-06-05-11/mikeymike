@@ -1,0 +1,302 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Start een lokale webserver die het IT Operations Dashboard live serveert.
+    Bij elk bezoek worden de CSV-bestanden vers ingelezen.
+
+.PARAMETER OutputBase
+    Basismap waar de Source1-4 mappen staan.
+    Standaard: D:\output
+
+.PARAMETER Port
+    Poortnummer voor de webserver.
+    Standaard: 8080
+#>
+
+[CmdletBinding()]
+param(
+    [string]$OutputBase = "D:\output",
+    [int]$Port = 8080
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# ─── Hulpfuncties ─────────────────────────────────────────────────────────────
+
+function Get-LatestCsv ([string]$Folder) {
+    if (-not (Test-Path $Folder)) { return $null }
+    Get-ChildItem -Path $Folder -Filter "*.csv" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function ConvertTo-HtmlRows {
+    param(
+        $Data,
+        [string[]]$Columns,
+        [hashtable]$StatusColumns = @{}
+    )
+
+    if (-not $Data -or $Data.Count -eq 0) { return "" }
+
+    $sb = [System.Text.StringBuilder]::new()
+    foreach ($row in $Data) {
+        [void]$sb.Append("<tr>")
+        foreach ($col in $Columns) {
+            $val     = if ($null -ne $row.$col) { $row.$col.ToString() } else { "" }
+            $escaped = $val -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
+            $class   = ""
+
+            if ($StatusColumns.ContainsKey($col)) {
+                $type = $StatusColumns[$col]
+                if ($type -eq "status") {
+                    if     ($val -match "Start|Running") { $class = ' class="ok"'   }
+                    elseif ($val -match "Stop|Error")    { $class = ' class="stop"' }
+                    elseif ($val -match "Unknown|Niet")  { $class = ' class="warn"' }
+                }
+                elseif ($type -eq "notempty") {
+                    if ($val -ne "-" -and $val -ne "")  { $class = ' class="warn"' }
+                }
+            }
+
+            [void]$sb.Append("<td$class>$escaped</td>")
+        }
+        [void]$sb.Append("</tr>")
+    }
+    return $sb.ToString()
+}
+
+function Build-DashboardHtml {
+    $base = $OutputBase
+    $port = $Port
+
+    $csv1  = Get-LatestCsv "$base\Source1"
+    $csv2  = Get-LatestCsv "$base\Source2"
+    $csv3  = Get-LatestCsv "$base\Source3"
+    $csv4  = Get-LatestCsv "$base\Source4"
+
+    $data1 = if ($csv1) { Import-Csv -Path $csv1.FullName -Delimiter ";" } else { @() }
+    $data2 = if ($csv2) { Import-Csv -Path $csv2.FullName -Delimiter ";" } else { @() }
+    $data3 = if ($csv3) { Import-Csv -Path $csv3.FullName -Delimiter ";" } else { @() }
+    $data4 = if ($csv4) { Import-Csv -Path $csv4.FullName -Delimiter ";" } else { @() }
+
+    $label1 = if ($csv1) { "$($csv1.Name) — $($csv1.LastWriteTime.ToString('dd-MM-yyyy HH:mm'))" } else { "Geen data" }
+    $label2 = if ($csv2) { "$($csv2.Name) — $($csv2.LastWriteTime.ToString('dd-MM-yyyy HH:mm'))" } else { "Geen data" }
+    $label3 = if ($csv3) { "$($csv3.Name) — $($csv3.LastWriteTime.ToString('dd-MM-yyyy HH:mm'))" } else { "Geen data" }
+    $label4 = if ($csv4) { "$($csv4.Name) — $($csv4.LastWriteTime.ToString('dd-MM-yyyy HH:mm'))" } else { "Geen data" }
+
+    $rows1 = ConvertTo-HtmlRows -Data $data1 -Columns @("Computer","Pad","Naam","Waarde","Type")
+    $rows2 = ConvertTo-HtmlRows -Data $data2 -Columns @("Naam","Pad","Gewijzigd","Uitgecheckt_Door") `
+        -StatusColumns @{ Uitgecheckt_Door = "notempty" }
+    $rows3 = ConvertTo-HtmlRows -Data $data3 `
+        -Columns @("Server","Site","Applicatie","Versie","Site_Status","AppPool_Status","DotNet_Versie") `
+        -StatusColumns @{ Site_Status = "status"; AppPool_Status = "status" }
+    $rows4 = ConvertTo-HtmlRows -Data $data4 `
+        -Columns @("Computernaam","OS_Naam","Build_Nummer","Architectuur","SCCM_Client_Versie","Laatste_Inventaris")
+
+    $noData1 = if (-not $rows1) { "<tr><td colspan='5'  class='no-data'>Geen data — voer run-all.bat uit</td></tr>" } else { "" }
+    $noData2 = if (-not $rows2) { "<tr><td colspan='4'  class='no-data'>Geen data — voer run-all.bat uit</td></tr>" } else { "" }
+    $noData3 = if (-not $rows3) { "<tr><td colspan='7'  class='no-data'>Geen data — voer run-all.bat uit</td></tr>" } else { "" }
+    $noData4 = if (-not $rows4) { "<tr><td colspan='6'  class='no-data'>Geen data — voer run-all.bat uit</td></tr>" } else { "" }
+
+    $timestamp = Get-Date -Format "dd-MM-yyyy HH:mm:ss"
+    $hostname  = $env:COMPUTERNAME
+
+    $count1 = $data1.Count
+    $count2 = $data2.Count
+    $count3 = $data3.Count
+    $count4 = $data4.Count
+
+return @"
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Operations Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #1b2a4a; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        header { background-color: #0f1e36; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a9fd4; flex-shrink: 0; }
+        header h1 { font-size: 1.2rem; font-weight: 600; color: #4a9fd4; letter-spacing: 1px; text-transform: uppercase; }
+        .header-right { display: flex; align-items: center; gap: 16px; font-size: 0.75rem; color: #7a9fc4; }
+        .refresh-btn { background: #4a9fd4; color: #0f1e36; border: none; padding: 4px 14px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+        .refresh-btn:hover { background: #6ab4e8; }
+        #cd { color: #f0a500; font-weight: 700; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 10px; flex: 1; overflow: hidden; }
+        .panel { background-color: #243454; border-radius: 6px; border: 1px solid #2e4070; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { background-color: #1b3060; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a9fd4; flex-shrink: 0; }
+        .panel-header h2 { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #4a9fd4; }
+        .panel-header .badge { font-size: 0.68rem; background-color: #f0a500; color: #1b2a4a; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+        .source-label { font-size: 0.63rem; color: #4a6080; padding: 4px 12px 3px; background-color: #1e2e4a; flex-shrink: 0; }
+        .panel-body { flex: 1; overflow-y: auto; }
+        .panel-body::-webkit-scrollbar { width: 5px; }
+        .panel-body::-webkit-scrollbar-track { background: #1b2a4a; }
+        .panel-body::-webkit-scrollbar-thumb { background: #4a9fd4; border-radius: 3px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+        thead th { background-color: #162540; padding: 5px 10px; text-align: left; font-weight: 600; color: #7aafd4; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        tbody tr:nth-child(even) { background-color: #1f2e48; }
+        tbody tr:hover { background-color: #2a4070; }
+        tbody td { padding: 5px 10px; border-bottom: 1px solid #253550; color: #c8daf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .ok   { color: #4caf50; font-weight: 600; }
+        .stop { color: #e94560; font-weight: 600; }
+        .warn { color: #f0a500; font-weight: 600; }
+        .no-data { color: #4a6080; font-style: italic; text-align: center; padding: 20px; }
+        footer { background-color: #0f1e36; padding: 5px 20px; font-size: 0.65rem; color: #4a6080; border-top: 1px solid #253550; flex-shrink: 0; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>&#9670; IT Operations Dashboard</h1>
+    <div class="header-right">
+        <span>$timestamp &nbsp;|&nbsp; $hostname</span>
+        <span>Vernieuwen over <span id="cd">60</span>s</span>
+        <button class="refresh-btn" onclick="location.reload()">&#8635; Nu vernieuwen</button>
+    </div>
+</header>
+
+<div class="grid">
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128274; Register Waarden</h2>
+            <span class="badge">$count1 regels</span>
+        </div>
+        <div class="source-label">$base\Source1 &mdash; $label1</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Computer</th><th>Pad</th><th>Naam</th><th>Waarde</th><th>Type</th></tr></thead>
+                <tbody>$rows1$noData1</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#9881; Orchestrator Runbooks</h2>
+            <span class="badge">$count2 regels</span>
+        </div>
+        <div class="source-label">$base\Source2 &mdash; $label2</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Naam</th><th>Pad</th><th>Gewijzigd</th><th>Uitgecheckt</th></tr></thead>
+                <tbody>$rows2$noData2</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#127760; IIS Applicaties</h2>
+            <span class="badge">$count3 regels</span>
+        </div>
+        <div class="source-label">$base\Source3 &mdash; $label3</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Server</th><th>Site</th><th>Applicatie</th><th>Versie</th><th>Status</th><th>App Pool</th><th>.NET</th></tr></thead>
+                <tbody>$rows3$noData3</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128187; SCCM Build Report</h2>
+            <span class="badge">$count4 regels</span>
+        </div>
+        <div class="source-label">$base\Source4 &mdash; $label4</div>
+        <div class="panel-body">
+            <table>
+                <thead><tr><th>Computernaam</th><th>OS</th><th>Build</th><th>Arch</th><th>SCCM Client</th><th>Inventaris</th></tr></thead>
+                <tbody>$rows4$noData4</tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    <span>Webserver: http://localhost:$port/</span>
+    <span>Source1: Registry &nbsp;|&nbsp; Source2: Orchestrator &nbsp;|&nbsp; Source3: IIS &nbsp;|&nbsp; Source4: SCCM</span>
+    <span>Data: $base</span>
+</footer>
+
+<script>
+    let s = 60;
+    const el = document.getElementById('cd');
+    setInterval(() => { s--; el.textContent = s; if (s <= 0) location.reload(); }, 1000);
+</script>
+
+</body>
+</html>
+"@
+}
+
+# ─── HTTP Server starten ───────────────────────────────────────────────────────
+
+$url = "http://localhost:$Port/"
+
+try {
+    $listener = [System.Net.HttpListener]::new()
+    $listener.Prefixes.Add($url)
+    $listener.Start()
+}
+catch {
+    Write-Error "Kon server niet starten op poort $Port.`nIs de poort al in gebruik? Probeer een andere poort via -Port 9090`n$_"
+    exit 1
+}
+
+Write-Host ""
+Write-Host "  ╔═══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║   IT Operations Dashboard — Webserver             ║" -ForegroundColor Cyan
+Write-Host "  ╠═══════════════════════════════════════════════════╣" -ForegroundColor Cyan
+Write-Host "  ║   URL    : http://localhost:$Port/                   ║" -ForegroundColor Cyan
+Write-Host "  ║   Data   : $OutputBase                        ║" -ForegroundColor Cyan
+Write-Host "  ║   Stop   : Ctrl+C                                  ║" -ForegroundColor Cyan
+Write-Host "  ╚═══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+
+try {
+    while ($listener.IsListening) {
+        $context  = $listener.GetContext()
+        $request  = $context.Request
+        $response = $context.Response
+        $path     = $request.Url.AbsolutePath
+
+        if ($path -eq "/" -or $path -eq "/dashboard") {
+            Write-Host "  [$(Get-Date -Format 'HH:mm:ss')]  $($request.RemoteEndPoint)  →  Dashboard" -ForegroundColor DarkGray
+            try {
+                $html   = Build-DashboardHtml
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $response.ContentType     = "text/html; charset=utf-8"
+                $response.ContentLength64 = $buffer.Length
+                $response.StatusCode      = 200
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
+            catch {
+                $err    = "Fout bij genereren dashboard: $_"
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($err)
+                $response.StatusCode      = 500
+                $response.ContentType     = "text/plain; charset=utf-8"
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-Warning $err
+            }
+        }
+        else {
+            $msg    = "404 - Niet gevonden: $path"
+            $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
+            $response.StatusCode      = 404
+            $response.ContentLength64 = $buffer.Length
+            $response.OutputStream.Write($buffer, 0, $buffer.Length)
+        }
+
+        $response.OutputStream.Close()
+    }
+}
+finally {
+    $listener.Stop()
+    Write-Host "`n  Server gestopt." -ForegroundColor Yellow
+}

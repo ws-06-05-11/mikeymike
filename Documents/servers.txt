@@ -2,9 +2,10 @@
 # Regels die beginnen met # worden overgeslagen
 # Deze servers worden gebruikt door Get-RegistryValue en Get-IisApplicationVersion
 
-SERVER01
-SERVER02
-SERVER03
-WEB01
-WEB02
-DB01
+X1-bzn0172
+X2-bzn0172
+XS-bzn0172
+X1-bzn0172
+Xt-bzn0172
+Xm-bzn0172
+Xg-bzn0172

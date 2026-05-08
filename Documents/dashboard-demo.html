@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Operations Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #1b2a4a; color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        header { background-color: #0f1e36; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a9fd4; flex-shrink: 0; }
+        header h1 { font-size: 1.2rem; font-weight: 600; color: #4a9fd4; letter-spacing: 1px; text-transform: uppercase; }
+        header .timestamp { font-size: 0.75rem; color: #7a9fc4; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 10px; flex: 1; overflow: hidden; }
+        .panel { background-color: #243454; border-radius: 6px; border: 1px solid #2e4070; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { background-color: #1b3060; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a9fd4; flex-shrink: 0; }
+        .panel-header h2 { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #4a9fd4; }
+        .panel-header .badge { font-size: 0.68rem; background-color: #f0a500; color: #1b2a4a; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+        .source-label { font-size: 0.63rem; color: #4a6080; padding: 4px 12px 3px; background-color: #1e2e4a; flex-shrink: 0; }
+        .panel-body { flex: 1; overflow-y: auto; }
+        .panel-body::-webkit-scrollbar { width: 5px; }
+        .panel-body::-webkit-scrollbar-track { background: #1b2a4a; }
+        .panel-body::-webkit-scrollbar-thumb { background: #4a9fd4; border-radius: 3px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+        thead th { background-color: #162540; padding: 5px 10px; text-align: left; font-weight: 600; color: #7aafd4; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.3px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        tbody tr:nth-child(even) { background-color: #1f2e48; }
+        tbody tr:hover { background-color: #2a4070; }
+        tbody td { padding: 5px 10px; border-bottom: 1px solid #253550; color: #c8daf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .ok   { color: #4caf50; font-weight: 600; }
+        .stop { color: #e94560; font-weight: 600; }
+        .warn { color: #f0a500; font-weight: 600; }
+        footer { background-color: #0f1e36; padding: 5px 20px; font-size: 0.65rem; color: #4a6080; border-top: 1px solid #253550; flex-shrink: 0; text-align: center; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>&#9670; IT Operations Dashboard</h1>
+    <span class="timestamp">Gegenereerd: 08-05-2026 15:44:12 &nbsp;|&nbsp; Servers: X1-bzn0172, X2-bzn0172, XS-bzn0172, Xt-bzn0172, Xm-bzn0172, Xg-bzn0172</span>
+</header>
+
+<div class="grid">
+
+    <!-- Source1: Registry -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128274; Register Waarden</h2>
+            <span class="badge">Source 1</span>
+        </div>
+        <div class="source-label">D:\output\Source1 &mdash; Registry_20260508_154410.csv</div>
+        <div class="panel-body">
+            <table>
+                <thead>
+                    <tr><th>Computer</th><th>Naam</th><th>Waarde</th><th>Type</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>X1-bzn0172</td><td>CurrentBuild</td><td>20348</td><td>String</td></tr>
+                    <tr><td>X1-bzn0172</td><td>DisplayVersion</td><td>21H2</td><td>String</td></tr>
+                    <tr><td>X1-bzn0172</td><td>EditionID</td><td>ServerDatacenter</td><td>String</td></tr>
+                    <tr><td>X2-bzn0172</td><td>CurrentBuild</td><td>20348</td><td>String</td></tr>
+                    <tr><td>X2-bzn0172</td><td>DisplayVersion</td><td>21H2</td><td>String</td></tr>
+                    <tr><td>X2-bzn0172</td><td>EditionID</td><td>ServerDatacenter</td><td>String</td></tr>
+                    <tr><td>XS-bzn0172</td><td>CurrentBuild</td><td>17763</td><td>String</td></tr>
+                    <tr><td>XS-bzn0172</td><td>DisplayVersion</td><td>1809</td><td>String</td></tr>
+                    <tr><td>XS-bzn0172</td><td>EditionID</td><td>ServerStandard</td><td>String</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>CurrentBuild</td><td>20348</td><td>String</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>DisplayVersion</td><td>21H2</td><td>String</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>EditionID</td><td>ServerStandard</td><td>String</td></tr>
+                    <tr><td>Xm-bzn0172</td><td>CurrentBuild</td><td>20348</td><td>String</td></tr>
+                    <tr><td>Xm-bzn0172</td><td>DisplayVersion</td><td>21H2</td><td>String</td></tr>
+                    <tr><td>Xg-bzn0172</td><td>CurrentBuild</td><td>19041</td><td>String</td></tr>
+                    <tr><td>Xg-bzn0172</td><td>DisplayVersion</td><td>2004</td><td>String</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Source2: Orchestrator -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#9881; Orchestrator Runbooks</h2>
+            <span class="badge">Source 2</span>
+        </div>
+        <div class="source-label">D:\output\Source2 &mdash; Orchestrator_Runbooks_20260508_154411.csv</div>
+        <div class="panel-body">
+            <table>
+                <thead>
+                    <tr><th>Naam</th><th>Pad</th><th>Gewijzigd</th><th>Uitgecheckt</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Deploy-Application</td><td>Productie\Servers</td><td>06-05-2026 09:14</td><td>-</td></tr>
+                    <tr><td>Backup-Database</td><td>Productie\SQL</td><td>05-05-2026 22:00</td><td>-</td></tr>
+                    <tr><td>Restart-IIS</td><td>Productie\Web</td><td>04-05-2026 11:30</td><td class="warn">j.bakker</td></tr>
+                    <tr><td>Patch-bzn0172</td><td>Beheer\Patching</td><td>01-05-2026 08:00</td><td>-</td></tr>
+                    <tr><td>Monitor-Services</td><td>Beheer\Monitoring</td><td>30-04-2026 15:45</td><td>-</td></tr>
+                    <tr><td>Cleanup-Logs</td><td>Beheer\Maintenance</td><td>28-04-2026 03:00</td><td>-</td></tr>
+                    <tr><td>Create-User</td><td>AD\Accounts</td><td>25-04-2026 10:22</td><td class="warn">m.dejong</td></tr>
+                    <tr><td>Disable-User</td><td>AD\Accounts</td><td>20-04-2026 14:55</td><td>-</td></tr>
+                    <tr><td>Send-Report</td><td>Rapportage</td><td>07-05-2026 06:00</td><td>-</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Source3: IIS -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#127760; IIS Applicaties</h2>
+            <span class="badge">Source 3</span>
+        </div>
+        <div class="source-label">D:\output\Source3 &mdash; IIS_Applicaties_20260508_154412.csv</div>
+        <div class="panel-body">
+            <table>
+                <thead>
+                    <tr><th>Server</th><th>Site</th><th>Applicatie</th><th>Versie</th><th>Status</th><th>App Pool</th><th>.NET</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>XS-bzn0172</td><td>Intranet</td><td>(root)</td><td>3.2.1</td><td class="ok">Started</td><td class="ok">Started</td><td>v4.0</td></tr>
+                    <tr><td>XS-bzn0172</td><td>Intranet</td><td>api</td><td>2.0.4</td><td class="ok">Started</td><td class="ok">Started</td><td>Geen</td></tr>
+                    <tr><td>XS-bzn0172</td><td>Default Web Site</td><td>(root)</td><td>1.0.0</td><td class="ok">Started</td><td class="ok">Started</td><td>v4.0</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>Klantportaal</td><td>(root)</td><td>4.1.2</td><td class="ok">Started</td><td class="ok">Started</td><td>Geen</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>Klantportaal</td><td>beheer</td><td>4.1.2</td><td class="ok">Started</td><td class="ok">Started</td><td>Geen</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>OudeSite</td><td>(root)</td><td>1.2.0</td><td class="stop">Stopped</td><td class="stop">Stopped</td><td>v2.0</td></tr>
+                    <tr><td>Xm-bzn0172</td><td>Rapportage</td><td>(root)</td><td class="warn">Niet gevonden</td><td class="warn">Unknown</td><td class="ok">Started</td><td>v4.0</td></tr>
+                    <tr><td>Xm-bzn0172</td><td>Beheer</td><td>(root)</td><td>2.5.0</td><td class="ok">Started</td><td class="ok">Started</td><td>v4.0</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Source4: SCCM -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2>&#128187; SCCM Build Report</h2>
+            <span class="badge">Source 4</span>
+        </div>
+        <div class="source-label">D:\output\Source4 &mdash; SCCM_BuildReport_20260508_154413.csv</div>
+        <div class="panel-body">
+            <table>
+                <thead>
+                    <tr><th>Computernaam</th><th>OS</th><th>Build</th><th>Arch</th><th>SCCM Client</th><th>Inventaris</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>X1-bzn0172</td><td>Windows Server 2022</td><td>20348</td><td>64-bit</td><td>5.00.9096</td><td>07-05-2026 22:15</td></tr>
+                    <tr><td>X2-bzn0172</td><td>Windows Server 2022</td><td>20348</td><td>64-bit</td><td>5.00.9096</td><td>07-05-2026 22:30</td></tr>
+                    <tr><td>XS-bzn0172</td><td>Windows Server 2019</td><td>17763</td><td>64-bit</td><td>5.00.9068</td><td>07-05-2026 21:55</td></tr>
+                    <tr><td>Xt-bzn0172</td><td>Windows Server 2022</td><td>20348</td><td>64-bit</td><td>5.00.9096</td><td>07-05-2026 23:00</td></tr>
+                    <tr><td>Xm-bzn0172</td><td>Windows Server 2022</td><td>20348</td><td>64-bit</td><td>5.00.9096</td><td>07-05-2026 22:45</td></tr>
+                    <tr><td>Xg-bzn0172</td><td>Windows Server 2016</td><td>14393</td><td>64-bit</td><td class="warn">5.00.8968</td><td>06-05-2026 19:10</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    IT Operations Dashboard &nbsp;|&nbsp; Source1: Registry &nbsp;|&nbsp; Source2: Orchestrator &nbsp;|&nbsp; Source3: IIS &nbsp;|&nbsp; Source4: SCCM
+</footer>
+
+</body>
+</html>
